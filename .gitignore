@@ -1,0 +1,4 @@
+env/common.env
+.state/
+snapshots/
+.agent-local/

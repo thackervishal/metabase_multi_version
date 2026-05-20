@@ -1,0 +1,21 @@
+services:
+  sample-db:
+    image: ${QA_SAMPLE_IMAGE}
+    environment:
+      POSTGRES_DB: ${SAMPLE_DB_NAME}
+      POSTGRES_USER: ${SAMPLE_DB_USER}
+      POSTGRES_PASSWORD: ${SAMPLE_DB_PASSWORD}
+    ports:
+      - "${SAMPLE_DB_PORT}:5432"
+    volumes:
+      - sample_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${SAMPLE_DB_USER} -d ${SAMPLE_DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  sample_db_data:
+    external: true
+    name: ${SAMPLE_DB_VOLUME}
