@@ -1,6 +1,6 @@
 # Metabase Local Stack
 
-Spin up isolated, fully-seeded Metabase stacks for different Metabase versions — each with its own app database, sample data warehouse, users, and starter content — so you can test or explore behaviour across versions without touching each other's data.
+Spin up isolated, fully-seeded Metabase stacks for different Metabase versions — each with its own app_db, sample data warehouse, users, and starter content — so you can test or explore behaviour across versions without touching each other's data.
 
 This is not a tool for testing Metabase upgrades or migrations. Each version runs independently with its own persistent state. Cross-version upgrade comparison may be added in a future iteration.
 
@@ -104,7 +104,7 @@ If new content is added to the seed script in a future commit, the next `make st
 
 ## Default Credentials
 
-Shared across all stacks unless overridden in `env/common.env`. Ports vary by version.
+Shared across all stacks unless overridden in `env/common.env`. Ports vary by stack.
 
 Metabase users:
 
@@ -114,16 +114,16 @@ Metabase users:
 
 Example ports for the checked-in stacks:
 
-| Version | Metabase | App DB | Sample DWH |
+| Version | Metabase | app_db | Sample DWH |
 |---|---|---|---|
 | `1.59.4.x` | 3000 | 15402 | 15403 |
 | `1.59.5.x` | 3100 | 15412 | 15413 |
 | `1.60.0.x` | 3200 | 15422 | 15423 |
 | `1.61.1.x` | 3300 | 15432 | 15433 |
 
-App database: host `localhost`, database `metabaseappdb`, user `metabase`, password `metabase_app_password`.
+Credentials — app_db: host `localhost`, database `metabaseappdb`, user `metabase`, password `metabase_app_password`.
 
-Sample DWH: host `localhost`, database `sample`, user `metabase`, password `metasample123`.
+Credentials — Sample DWH: host `localhost`, database `sample`, user `metabase`, password `metasample123`.
 
 ## Built-In Local Defaults
 
@@ -144,7 +144,7 @@ Unless overridden in `env/common.env`:
 
 `MB_AUTOMATION_API_KEY` is defined in `env/common.env`. The compose file passes it into the Metabase container, and `seed/metabase/config.yml` tells Metabase to create an API key with that exact value during bootstrap. The seed script then uses the same key for all post-start API calls — no manual key creation needed.
 
-If you rotate the key in `env/common.env`, rebuild from a clean app database so the bootstrap can recreate it consistently.
+If you rotate the key in `env/common.env`, rebuild from a clean app_db so the bootstrap can recreate it consistently.
 
 ## Key Files
 
@@ -163,12 +163,12 @@ If you rotate the key in `env/common.env`, rebuild from a clean app database so 
 - `scripts/start.sh` — full startup: pull image if newer, create volumes, start databases, wait for health, start Metabase, seed
 - `scripts/stop.sh` — stop containers, leave volumes
 - `scripts/nuke.sh` — destructive reset: remove containers, network, volumes, and seed markers
-- `scripts/optional/snapshot.sh` — SQL dumps for the app DB and sample DWH
+- `scripts/optional/snapshot.sh` — SQL dumps for the app_db and sample DWH
 - `scripts/optional/restore.sh` — restore those dumps into running containers
 
 ## Adding a New Dataset Profile
 
-The app database is always Postgres. The sample data warehouse is currently Postgres-only (`sample-pg15`), but the repo is designed to support other database types in future dataset profiles.
+The app_db is always Postgres. The sample data warehouse is currently Postgres-only (`sample-pg15`), but the repo is designed to support other database types in future dataset profiles.
 
 To add a new dataset:
 
