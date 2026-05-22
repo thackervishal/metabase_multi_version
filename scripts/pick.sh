@@ -153,10 +153,10 @@ while true; do
   esac
 done
 
-# Guard: block starting an already-running stack
+# Guard: already-running stack selected for start — nothing to do
 if [[ "$action" == "start" ]] && is_running "$selected_version" "$selected_dataset"; then
-  echo "Stack ${selected_version} is already running. Use 'make stop' first." >&2
-  exit 1
+  echo "Stack ${selected_version} [${selected_dataset}] is already running — nothing to do. Enjoy!"
+  exit 0
 fi
 
 echo

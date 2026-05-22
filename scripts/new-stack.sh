@@ -33,30 +33,39 @@ if [[ ${#datasets[@]} -eq 0 ]]; then
   exit 1
 fi
 
-# ── Prompt for major.minor ────────────────────────────────────────────────────
+# ── Prompt for major ──────────────────────────────────────────────────────────
 
 echo
-read -rp "Metabase major.minor version (e.g. 1.61): " major_minor </dev/tty
+read -rp "Metabase major version (e.g. 1.61): " major_minor </dev/tty
 if [[ ! "$major_minor" =~ ^[0-9]+\.[0-9]+$ ]]; then
-  echo "Invalid format — enter as <major>.<minor> e.g. 1.61" >&2
+  echo "Invalid format — enter as e.g. 1.61" >&2
   exit 1
 fi
 
-# ── Fetch tags from Docker Hub ────────────────────────────────────────────────
+# ── Fetch all stable tags for this major (one request) ───────────────────────
+
+# 0.x = OSS (metabase/metabase), 1.x = Enterprise (metabase/metabase-enterprise)
+if [[ "$major_minor" == 0.* ]]; then
+  hub_repo="metabase/metabase"
+  edition="OSS"
+else
+  hub_repo="metabase/metabase-enterprise"
+  edition="Enterprise"
+fi
 
 echo
-echo "Fetching available ${major_minor} builds from Docker Hub..."
+echo "Fetching available ${major_minor} builds from Docker Hub (${edition})..."
 
 tags_json="$(curl -fsSL \
-  "https://hub.docker.com/v2/repositories/metabase/metabase-enterprise/tags?page_size=50&name=v${major_minor}." \
+  "https://hub.docker.com/v2/repositories/${hub_repo}/tags?page_size=50&name=v${major_minor}." \
   2>/dev/null)" || {
   echo "Failed to reach Docker Hub. Check your internet connection." >&2
   exit 1
 }
 
-available_tags=()
+all_tags=()
 while IFS= read -r tag; do
-  [[ -n "$tag" ]] && available_tags+=("$tag")
+  [[ -n "$tag" ]] && all_tags+=("$tag")
 done < <(
   echo "$tags_json" | jq -r \
     --arg prefix "v${major_minor}." \
@@ -67,48 +76,104 @@ done < <(
   | sort -r
 )
 
-if [[ ${#available_tags[@]} -eq 0 ]]; then
+if [[ ${#all_tags[@]} -eq 0 ]]; then
   echo "No stable builds found for ${major_minor} on Docker Hub." >&2
   echo "Check the version number and try again." >&2
-  exit 1
+  exit 0
 fi
 
-# ── Prompt for float vs pin ───────────────────────────────────────────────────
+# ── Pick minor ────────────────────────────────────────────────────────────────
 
-latest="${available_tags[0]}"
-stripped="${latest#v}"
-floating_tag="${stripped%.*}.x"
-
-echo
-echo "Available builds for ${major_minor} (newest first):"
-echo
-
-for i in "${!available_tags[@]}"; do
-  printf "  %2d)  %s\n" "$((i + 1))" "${available_tags[$i]}"
+# Derive unique minor versions (X.Y.Z without the hotfix digit), newest first.
+minor_list=()
+declare -A seen_minors
+for tag in "${all_tags[@]}"; do
+  stripped="${tag#v}"
+  minor="${stripped%.*}"
+  if [[ -z "${seen_minors[$minor]+x}" ]]; then
+    seen_minors["$minor"]=1
+    minor_list+=("$minor")
+  fi
 done
 
 echo
-echo "  f)  Float on latest patch  →  MB_IMAGE_TAG=${floating_tag}  (auto-pulls newer bugfixes on make start)"
+echo "Minor versions for ${major_minor} (newest first):"
+echo
+
+for i in "${!minor_list[@]}"; do
+  minor="${minor_list[$i]}"
+  label="$minor"
+  if find "$STACK_ROOT/env/mb_versions" -maxdepth 1 -name "${minor}.*.env" 2>/dev/null | grep -q .; then
+    label+="  (stack exists)"
+  fi
+  printf "  %2d)  %s\n" "$((i + 1))" "$label"
+done
+echo
+
+selected_minor=""
+while true; do
+  read -rp "Enter number (or q to quit): " choice </dev/tty
+  case "$choice" in
+    q|Q) exit 0 ;;
+    *)
+      if [[ "$choice" =~ ^[0-9]+$ && "$choice" -ge 1 && "$choice" -le "${#minor_list[@]}" ]]; then
+        selected_minor="${minor_list[$((choice - 1))]}"
+        break
+      fi
+      echo "  Please enter a number from 1 to ${#minor_list[@]}, or q to quit."
+      ;;
+  esac
+done
+
+# ── Pick hotfix or float ──────────────────────────────────────────────────────
+
+hotfix_tags=()
+for tag in "${all_tags[@]}"; do
+  stripped="${tag#v}"
+  [[ "${stripped%.*}" == "$selected_minor" ]] && hotfix_tags+=("$tag")
+done
+
+floating_tag="${selected_minor}.x"
+
+echo
+echo "Builds for ${selected_minor} (newest first):"
+echo
+
+for i in "${!hotfix_tags[@]}"; do
+  tag="${hotfix_tags[$i]}"
+  label="$tag"
+  [[ -f "$STACK_ROOT/env/mb_versions/${tag#v}.env" ]] && label+="  (already configured)"
+  printf "  %2d)  %s\n" "$((i + 1))" "$label"
+done
+
+float_label="Float on latest patch  →  MB_IMAGE_TAG=${floating_tag}  (auto-pulls newer bugfixes on make start)"
+[[ -f "$STACK_ROOT/env/mb_versions/${floating_tag}.env" ]] && float_label+="  (already configured)"
+echo
+echo "  f)  ${float_label}"
+echo "  q)  Quit"
 echo
 
 image_tag=""
 while true; do
-  read -rp "Enter number to pin, or f to float [f]: " choice </dev/tty
+  read -rp "Enter number to pin, f to float, or q to quit [f]: " choice </dev/tty
   choice="${choice:-f}"
   case "$choice" in
+    q|Q)
+      exit 0
+      ;;
     f|F)
       image_tag="$floating_tag"
       break
       ;;
-    ""|*[!0-9]*)
-      echo "  Enter a number from 1 to ${#available_tags[@]}, or f."
+    *[!0-9]*)
+      echo "  Enter a number from 1 to ${#hotfix_tags[@]}, f, or q."
       ;;
     *)
-      if [[ "$choice" -ge 1 && "$choice" -le "${#available_tags[@]}" ]]; then
-        image_tag="${available_tags[$((choice - 1))]#v}"
+      if [[ "$choice" -ge 1 && "$choice" -le "${#hotfix_tags[@]}" ]]; then
+        image_tag="${hotfix_tags[$((choice - 1))]#v}"
         break
       fi
-      echo "  Enter a number from 1 to ${#available_tags[@]}, or f."
+      echo "  Enter a number from 1 to ${#hotfix_tags[@]}, f, or q."
       ;;
   esac
 done
@@ -118,9 +183,9 @@ done
 env_file="$STACK_ROOT/env/mb_versions/${image_tag}.env"
 if [[ -f "$env_file" ]]; then
   echo
-  echo "Stack env file already exists: env/mb_versions/${image_tag}.env" >&2
-  echo "Remove it first or choose a different tag." >&2
-  exit 1
+  echo "Stack ${image_tag} is already configured — nothing to do."
+  echo "Use 'make start' to start it, or 'make removeStack' to remove it first."
+  exit 0
 fi
 
 # ── Suggest ports based on existing env files ─────────────────────────────────
@@ -131,17 +196,11 @@ max_sampledwh=15393
 
 while IFS= read -r f; do
   port="$(grep -E '^METABASE_PORT=' "$f" 2>/dev/null | cut -d= -f2 || true)"
-  if [[ -n "$port" && "$port" -gt "$max_metabase" ]]; then
-    max_metabase="$port"
-  fi
+  if [[ -n "$port" && "$port" -gt "$max_metabase" ]]; then max_metabase="$port"; fi
   port="$(grep -E '^APP_DB_PORT=' "$f" 2>/dev/null | cut -d= -f2 || true)"
-  if [[ -n "$port" && "$port" -gt "$max_appdb" ]]; then
-    max_appdb="$port"
-  fi
+  if [[ -n "$port" && "$port" -gt "$max_appdb" ]]; then max_appdb="$port"; fi
   port="$(grep -E '^SAMPLE_DB_PORT=' "$f" 2>/dev/null | cut -d= -f2 || true)"
-  if [[ -n "$port" && "$port" -gt "$max_sampledwh" ]]; then
-    max_sampledwh="$port"
-  fi
+  if [[ -n "$port" && "$port" -gt "$max_sampledwh" ]]; then max_sampledwh="$port"; fi
 done < <(
   find "$STACK_ROOT/env/mb_versions" -maxdepth 1 -name "*.env" ! -name "template.env.example" 2>/dev/null \
   || true
@@ -191,12 +250,17 @@ else
   done
   echo
   while true; do
-    read -rp "Enter number: " dchoice </dev/tty
-    if [[ "$dchoice" =~ ^[0-9]+$ && "$dchoice" -ge 1 && "$dchoice" -le "${#datasets[@]}" ]]; then
-      selected_dataset="${datasets[$((dchoice - 1))]}"
-      break
-    fi
-    echo "  Please enter a number from 1 to ${#datasets[@]}."
+    read -rp "Enter number (or q to quit): " dchoice </dev/tty
+    case "$dchoice" in
+      q|Q) exit 0 ;;
+      *)
+        if [[ "$dchoice" =~ ^[0-9]+$ && "$dchoice" -ge 1 && "$dchoice" -le "${#datasets[@]}" ]]; then
+          selected_dataset="${datasets[$((dchoice - 1))]}"
+          break
+        fi
+        echo "  Please enter a number from 1 to ${#datasets[@]}, or q to quit."
+        ;;
+    esac
   done
 fi
 

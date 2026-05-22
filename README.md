@@ -44,6 +44,9 @@ Once your stack env files are in place, run `make start`, `make stop`, or `make 
 | `make start` | Interactive — pick a stack to start |
 | `make stop` | Interactive — pick a running stack to stop |
 | `make nuke` | Interactive — pick a stack to destroy |
+| `make list` | Show all configured stacks with ports and running status |
+| `make new` | Create a new version env file — drill down major → minor → hotfix or float, suggests ports, optionally starts |
+| `make remove` | Remove a stack entirely — nukes runtime state then deletes the version env file |
 
 **Prefer typing the command directly?**
 
@@ -90,7 +93,7 @@ Subsequent `make start` runs pick up only new content — existing items are unt
 ## What Is and Isn't Git-Ignored
 
 | Path | Status | Why |
-|---|---|---|
+| --- | --- | --- |
 | `env/common.env` | git-ignored | Per-user secrets and tokens |
 | `env/mb_versions/*.env` | git-ignored | Per-user: stack choice and ports vary per machine |
 | `env/mb_versions/template.env.example` | committed | Reference template |
@@ -142,7 +145,7 @@ Unless overridden in `env/common.env`:
 ### Files and Scripts
 
 | Path | Purpose |
-|---|---|
+| --- | --- |
 | `env/common.env` | Local secrets and shared settings (gitignored) |
 | `env/mb_versions/<version>.env` | Image tag and port bindings for one stack (gitignored, personal) |
 | `env/dwh_source/<dataset>.env` | DWH image and dataset-specific settings |
@@ -150,7 +153,10 @@ Unless overridden in `env/common.env`:
 | `seed/metabase/config.yml` | Bootstrap: users, API key, database connection |
 | `seed/sample-dwh/person_profiles_json.sql` | JSON sidecar table for the sample DWH |
 | `scripts/common.sh` | Shared runtime: env loading, stack naming, path normalization, image refresh, health waiting |
+| `scripts/list-stacks.sh` | Show all configured stacks with ports and running status |
 | `scripts/pick.sh` | Interactive picker: reads env files, detects running stacks, hands off to start/stop/nuke |
+| `scripts/new-stack.sh` | Create a new version env file: queries Docker Hub, suggests ports, optionally starts |
+| `scripts/remove-stack.sh` | Remove a stack: nukes runtime state for all dataset combos, deletes the version env file |
 | `scripts/start.sh` | Pull image if newer, create volumes, start services, seed |
 | `scripts/stop.sh` | Stop containers, leave volumes intact |
 | `scripts/nuke.sh` | Remove containers, network, volumes, seed markers |
