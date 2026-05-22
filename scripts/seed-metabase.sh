@@ -15,6 +15,8 @@ load_stack_env "$VERSION" "$DATASET_KEY"
 require_command jq
 mkdir -p "$STACK_STATE_DIR"
 
+SEED_CONTENT_VERSION="4"
+
 api_request() {
   local method="$1"
   local endpoint="$2"
@@ -104,6 +106,14 @@ dashboard_id_by_name() {
   api_request GET "/api/search?q=${dashboard_name// /%20}" | jq -r --arg name "$dashboard_name" '.data[]? | select(.model == "dashboard" and .name == $name) | .id' | head -n 1
 }
 
+collection_item_id_by_name() {
+  local collection_id="$1"
+  local model="$2"
+  local item_name="$3"
+
+  api_request GET "/api/collection/${collection_id}/items" | jq -r --arg model "$model" --arg name "$item_name" '.data[]? | select(.model == $model and .name == $name) | .id' | head -n 1
+}
+
 wait_for_database_id_by_name() {
   local database_name="$1"
   local attempt=0
@@ -149,9 +159,14 @@ ensure_cache_policy "root" 0 "$DEFAULT_CACHE_POLICY_DURATION" "$DEFAULT_CACHE_PO
 database_id="$(wait_for_database_id_by_name "$SAMPLE_DB_DISPLAY_NAME")"
 ensure_cache_policy "database" "$database_id" "$DATABASE_CACHE_POLICY_DURATION" "$DATABASE_CACHE_POLICY_UNIT" "$DATABASE_CACHE_POLICY_REFRESH_AUTOMATICALLY"
 
-# Avoid recreating the same groups and starter content on every normal restart.
-if [[ -f "$STACK_SEED_MARKER" && "${FORCE:-0}" != "1" ]]; then
-  echo "Seed marker found for ${COMPOSE_PROJECT_NAME}. Cache policy reconciled; skipping content reseed."
+current_seed_content_version=""
+if [[ -f "$STACK_SEED_MARKER" ]]; then
+  current_seed_content_version="$(<"$STACK_SEED_MARKER")"
+fi
+
+# Skip content reconciliation only when the seed version already matches.
+if [[ "$current_seed_content_version" == "$SEED_CONTENT_VERSION" && "${FORCE:-0}" != "1" ]]; then
+  echo "Seed marker version ${SEED_CONTENT_VERSION} found for ${COMPOSE_PROJECT_NAME}. Cache policy reconciled; skipping content reseed."
   exit 0
 fi
 
@@ -163,7 +178,7 @@ create_card_if_missing() {
   local existing_card_id
   local payload
 
-  existing_card_id="$(card_id_by_name "$card_name")"
+  existing_card_id="$(collection_item_id_by_name "$starter_collection_id" "card" "$card_name")"
   if [[ -n "$existing_card_id" ]]; then
     echo "$existing_card_id"
     return
@@ -195,6 +210,12 @@ field_id_by_name() {
   echo "$database_metadata_json" | jq -r --arg table_name "$table_name" --arg field_name "$field_name" '.tables[]? | select((.name | ascii_downcase) == ($table_name | ascii_downcase)) | .fields[]? | select((.name | ascii_downcase) == ($field_name | ascii_downcase)) | .id' | head -n 1
 }
 
+field_id_by_nfc_path() {
+  local table_name="$1"
+  local nfc_path_json="$2"
+  echo "$database_metadata_json" | jq -r --arg table_name "$table_name" --argjson nfc_path "$nfc_path_json" '.tables[]? | select((.name | ascii_downcase) == ($table_name | ascii_downcase)) | .fields[]? | select(.nfc_path == $nfc_path) | .id' | head -n 1
+}
+
 add_card_to_dashboard() {
   local dashboard_id="$1"
   local card_id="$2"
@@ -204,9 +225,12 @@ add_card_to_dashboard() {
   local size_y="$6"
   local dashboard_json
   local payload
-  local payload
 
   dashboard_json="$(api_request GET "/api/dashboard/${dashboard_id}")"
+  if echo "$dashboard_json" | jq -e --argjson card_id "$card_id" '.dashcards[]? | select(.card_id == $card_id)' >/dev/null; then
+    return
+  fi
+
   payload="$(echo "$dashboard_json" | jq -c \
     --argjson card_id "$card_id" \
     --argjson row "$row" \
@@ -260,13 +284,17 @@ if [[ -n "$database_id" ]]; then
     refresh_database_metadata
     orders_table_id="$(table_id_by_name "orders")"
     people_table_id="$(table_id_by_name "people")"
+    person_profiles_json_table_id="$(table_id_by_name "person_profiles_json")"
     products_table_id="$(table_id_by_name "products")"
     orders_created_at_field_id="$(field_id_by_name "orders" "created_at")"
     people_state_field_id="$(field_id_by_name "people" "state")"
+    people_id_field_id="$(field_id_by_name "people" "id")"
+    person_profiles_person_id_field_id="$(field_id_by_name "person_profiles_json" "person_id")"
+    person_profiles_dark_mode_field_id="$(field_id_by_nfc_path "person_profiles_json" '["profile_json","preferences","dark_mode"]')"
     products_category_field_id="$(field_id_by_name "products" "category")"
     orders_total_field_id="$(field_id_by_name "orders" "total")"
 
-    if [[ -n "$orders_table_id" && -n "$people_table_id" && -n "$products_table_id" && -n "$orders_created_at_field_id" && -n "$people_state_field_id" && -n "$products_category_field_id" && -n "$orders_total_field_id" ]]; then
+    if [[ -n "$orders_table_id" && -n "$people_table_id" && -n "$person_profiles_json_table_id" && -n "$products_table_id" && -n "$orders_created_at_field_id" && -n "$people_state_field_id" && -n "$people_id_field_id" && -n "$person_profiles_person_id_field_id" && -n "$person_profiles_dark_mode_field_id" && -n "$products_category_field_id" && -n "$orders_total_field_id" ]]; then
       break
     fi
 
@@ -297,27 +325,42 @@ if [[ -n "$database_id" ]]; then
       '{type: "query", database: $database, query: {"source-table": $source_table, aggregation: [["count"]], breakout: [["field", $category_field, null]], "order-by": [["desc", ["aggregation", 0]]], limit: 10}}')"
     monthly_revenue_query="$(jq -nc --argjson database "$database_id" '{type: "native", native: {query: "select date_trunc('"'"'month'"'"', created_at)::date as month, count(*) as order_count, round(sum(total)::numeric, 2) as revenue\nfrom orders\ngroup by 1\norder by 1;", "template-tags": {}}, database: $database}')"
     category_revenue_query="$(jq -nc --argjson database "$database_id" '{type: "native", native: {query: "select p.category, count(*) as orders, round(sum(o.total)::numeric, 2) as revenue\nfrom orders o\njoin products p on p.id = o.product_id\ngroup by 1\norder by revenue desc\nlimit 10;", "template-tags": {}}, database: $database}')"
+    state_field_filter_query="$(jq -nc \
+      --argjson database "$database_id" \
+      --argjson state_field "$people_state_field_id" \
+      '{type: "native", database: $database, native: {query: "select\n  count(distinct o.id), p.state\nfrom orders o\njoin people p on o.user_id = p.id\nwhere {{fltr_state}}\ngroup by p.state\norder by 1;", "template-tags": {"fltr_state": {id: "2441fdaf-2ff8-4fc1-9103-8b4d40f72c85", name: "fltr_state", "display-name": "Fltr State", type: "dimension", "widget-type": "string/=", default: null, dimension: ["field", $state_field, null], alias: "p.state"}}}}')"
+    json_unfolding_example_query="$(jq -nc \
+      --argjson database "$database_id" \
+      --argjson people_table "$people_table_id" \
+      --argjson person_profiles_json_table "$person_profiles_json_table_id" \
+      --argjson people_id_field "$people_id_field_id" \
+      --argjson person_profiles_person_id_field "$person_profiles_person_id_field_id" \
+      --argjson person_profiles_dark_mode_field "$person_profiles_dark_mode_field_id" \
+      '{type: "query", database: $database, query: {"source-table": $people_table, joins: [{strategy: "left-join", alias: "Person Profiles Json", "source-table": $person_profiles_json_table, fields: "none", condition: ["=", ["field", $people_id_field, null], ["field", $person_profiles_person_id_field, {"join-alias": "Person Profiles Json"}]]}], aggregation: [["count"]], breakout: [["field", $person_profiles_dark_mode_field, {"join-alias": "Person Profiles Json"}]]}}')"
 
     orders_by_month_card_id="$(create_card_if_missing "Orders by Month" "line" "GUI question showing monthly order volume in ${SAMPLE_DB_DISPLAY_NAME}." "$orders_by_month_query")"
     people_by_state_card_id="$(create_card_if_missing "Customers by State" "bar" "GUI question showing where customers are concentrated." "$people_by_state_query")"
     products_by_category_card_id="$(create_card_if_missing "Products by Category" "row" "GUI question showing product catalog mix by category." "$products_by_category_query")"
     monthly_revenue_card_id="$(create_card_if_missing "Monthly Revenue" "line" "SQL question showing order count and revenue by month." "$monthly_revenue_query")"
     category_revenue_card_id="$(create_card_if_missing "Top Categories by Revenue" "bar" "SQL question showing which product categories drive revenue." "$category_revenue_query")"
+    state_field_filter_card_id="$(create_card_if_missing "SQL Report with State Field Filter" "table" "SQL question showing a native field filter bound to People.State." "$state_field_filter_query")"
+    json_unfolding_example_card_id="$(create_card_if_missing "JSON Unfolding Example" "bar" "GUI question grouping people by the seeded profile dark mode preference." "$json_unfolding_example_query")"
 
     dashboard_name="${SAMPLE_DB_DISPLAY_NAME} Overview"
-    dashboard_id="$(dashboard_id_by_name "$dashboard_name")"
+    dashboard_id="$(collection_item_id_by_name "$starter_collection_id" "dashboard" "$dashboard_name")"
     if [[ -z "$dashboard_id" ]]; then
       dashboard_payload="$(jq -nc --arg name "$dashboard_name" --arg description "Seeded dashboard for ${SAMPLE_DB_DISPLAY_NAME}." --argjson collection_id "$starter_collection_id" '{name: $name, description: $description, collection_id: $collection_id, parameters: []}')"
       dashboard_id="$(api_request POST "/api/dashboard" "$dashboard_payload" | jq -r '.id')"
-      add_card_to_dashboard "$dashboard_id" "$orders_by_month_card_id" 0 0 12 6
-      add_card_to_dashboard "$dashboard_id" "$monthly_revenue_card_id" 0 12 12 6
-      add_card_to_dashboard "$dashboard_id" "$people_by_state_card_id" 6 0 8 6
-      add_card_to_dashboard "$dashboard_id" "$products_by_category_card_id" 6 8 8 6
-      add_card_to_dashboard "$dashboard_id" "$category_revenue_card_id" 6 16 8 6
-      add_card_to_dashboard "$dashboard_id" "$connectivity_card_id" 12 0 8 4
     fi
+
+    add_card_to_dashboard "$dashboard_id" "$orders_by_month_card_id" 0 0 12 6
+    add_card_to_dashboard "$dashboard_id" "$monthly_revenue_card_id" 0 12 12 6
+    add_card_to_dashboard "$dashboard_id" "$people_by_state_card_id" 6 0 8 6
+    add_card_to_dashboard "$dashboard_id" "$products_by_category_card_id" 6 8 8 6
+    add_card_to_dashboard "$dashboard_id" "$category_revenue_card_id" 6 16 8 6
+    add_card_to_dashboard "$dashboard_id" "$connectivity_card_id" 12 0 8 4
   fi
 fi
 
-touch "$STACK_SEED_MARKER"
+printf '%s\n' "$SEED_CONTENT_VERSION" > "$STACK_SEED_MARKER"
 echo "Metabase seed complete for ${COMPOSE_PROJECT_NAME}."

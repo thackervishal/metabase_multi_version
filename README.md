@@ -34,8 +34,9 @@ When you run `make start`, the process is split across Docker Compose, Metabase'
 6. Metabase reads `seed/metabase/config.yml` during startup because `compose/base.yml` mounts that file and sets `MB_CONFIG_FILE_PATH`.
 7. The stack derives local defaults for site naming, application naming, embedding, caching, transforms, usage analytics retention, and update checks from `scripts/common.sh`, and passes them into the Metabase container as environment variables.
 8. The config file creates the initial users, registers the sample database connection using the dataset key as its name, and installs a fixed automation API key from `MB_AUTOMATION_API_KEY`.
-9. After Metabase is reachable, `scripts/seed-metabase.sh` waits until that API key works, reconciles cache policies through `/api/cache`, and then creates groups, memberships, a starter collection, several starter questions, and a dashboard.
-10. When either seed step succeeds, it writes its own marker under `.state/` so sample data and Metabase content are not recreated on every restart. Cache policy reconciliation still runs on later starts.
+9. After Metabase is reachable, `scripts/seed-metabase.sh` waits until that API key works, reconciles cache policies through `/api/cache`, and then reconciles groups, memberships, a starter collection, several starter questions, including a SQL example with a field filter, and a dashboard.
+10. When either seed step succeeds, it writes its own marker under `.state/`. The Metabase content marker stores a seed content version, so later starts can pick up new baseline additions when that version changes. Cache policy reconciliation still runs on every start.
+11. The Metabase seed checks for existing seeded cards and dashboards from the actual seeded collection contents, not from search results, because the search index can lag behind real content state.
 
 ## Automation API key
 
@@ -247,7 +248,7 @@ The dataset file is chosen entirely by the `DATASET` value. For example, `DATASE
 - `scripts/start.sh` is the full startup path: create volumes, start databases, wait for health, start Metabase, then seed.
 - `scripts/stop.sh` stops containers without touching volumes.
 - `scripts/nuke.sh` is the destructive reset path used by `make nuke`.
-- `scripts/seed-metabase.sh` performs the idempotent post-start API seeding, including starter GUI questions, starter SQL questions, and a dashboard for the selected dataset.
+- `scripts/seed-metabase.sh` performs the idempotent post-start API seeding, including starter GUI questions, starter SQL questions, a native SQL field-filter example, and a dashboard for the selected dataset. It reconciles existence from the seeded collection contents rather than relying on Metabase search results.
 - `scripts/seed-sample-db.sh` performs the idempotent sample warehouse seed and writes its own `.state` marker so the JSON table is not recreated on every restart.
 - `scripts/optional/snapshot.sh` creates SQL dumps for the app DB and sample DB.
 - `scripts/optional/restore.sh` restores those SQL dumps back into running database containers.
