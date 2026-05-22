@@ -206,7 +206,7 @@ done < <(
   || true
 )
 
-sug_metabase=$(( max_metabase + 100 ))
+sug_metabase=$(( max_metabase + 10 ))
 sug_appdb=$(( max_appdb + 10 ))
 sug_sampledwh=$(( max_sampledwh + 10 ))
 
