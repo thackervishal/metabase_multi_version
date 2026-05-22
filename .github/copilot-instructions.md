@@ -16,9 +16,10 @@ Respect these repo-specific rules:
 Tracked repo notes:
 - Version env files (`env/mb_versions/*.env`) are gitignored and personal — each developer creates their own from `env/mb_versions/template.env.example`. There is no shared canonical version list. Floating `.x` filenames (e.g. `1.61.1.x.env`) track the latest patch; a full 4-part filename (e.g. `1.61.1.3.env`) pins to a specific build.
 - The current dataset profile is `sample-pg15`, using `metabase/qa-databases:postgres-sample-15` from `env/dwh_source/sample-pg15.env`. The sample data warehouse service is named `sample-dwh` in Docker Compose (not `sample-db`). The Metabase connection display name is `sample_dwh_pg15`.
-- The public workflow is `make start`, `make stop`, and `make nuke`.
+- The public workflow is `make start`, `make stop`, and `make nuke`. When `MB_VERSION` is omitted, each command invokes `scripts/pick.sh <action>`, which reads `env/mb_versions/` and `env/dwh_source/`, detects running stacks via `docker compose ls`, and presents an interactive numbered menu. When `MB_VERSION` is supplied, the command bypasses the picker and calls the underlying script directly.
 - `make nuke` removes containers, the compose network, external volumes, and the seed marker under `.state/`.
 - `scripts/common.sh` is the shared runtime layer for env loading, path normalization, stack naming, compose invocation, Metabase image refresh (pull if newer, prune old), and Metabase health waiting.
+- `scripts/pick.sh` is the interactive picker. It pre-sets `DATASET=""` and `MB_VERSION=""` before sourcing `common.env` to satisfy `set -u` (common.env references both before a stack is chosen). Running stacks are detected via `docker compose ls | awk` — no jq needed for this step.
 - Bootstrap uses `seed/metabase/config.yml` plus `scripts/seed-metabase.sh` to create admin, analyst, and sales users, two groups, a starter collection, and a connectivity-check card.
 - Seed new Metabase cards with the simplest viable approach: build direct API payloads in `scripts/seed-metabase.sh` instead of adding a separate metadata or template layer unless there is a strong reason.
 - For GUI-query seeds that depend on Metabase field IDs, derive table and field IDs from live database metadata inside `scripts/seed-metabase.sh` instead of hardcoding raw IDs from one local stack.

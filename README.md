@@ -29,13 +29,16 @@ This is not a tool for testing Metabase upgrades or migrations. Each version run
 
 ## Make Commands
 
-`MB_VERSION` and `DATASET` are always required.
+Omit `MB_VERSION` to get an interactive picker that reads your local env files and shows which stacks are already running.
 
 | Command | What it does |
 |---|---|
-| `make start MB_VERSION=<version> DATASET=<dataset>` | Pull latest image for given version, create volumes, start databases, start Metabase, run seed |
-| `make stop MB_VERSION=<version> DATASET=<dataset>` | Stop containers, leave all data volumes intact |
-| `make nuke MB_VERSION=<version> DATASET=<dataset>` | Remove containers, network, volumes, and seed markers |
+| `make start` | Interactive picker — choose a stack to start |
+| `make start MB_VERSION=<version> DATASET=<dataset>` | Non-interactive — pull latest image, create volumes, start databases, start Metabase, run seed |
+| `make stop` | Interactive picker — choose a running stack to stop |
+| `make stop MB_VERSION=<version> DATASET=<dataset>` | Non-interactive — stop containers, leave all data volumes intact |
+| `make nuke` | Interactive picker — choose a stack to nuke |
+| `make nuke MB_VERSION=<version> DATASET=<dataset>` | Non-interactive — remove containers, network, volumes, and seed markers |
 
 Single stack lifecycle:
 
@@ -160,6 +163,7 @@ If you rotate the key in `env/common.env`, rebuild from a clean app_db so the bo
 ## Helper Scripts
 
 - `scripts/common.sh` — shared runtime: load env files, derive stack names, normalize Windows paths, wrap `docker compose`, check for image updates, wait for health
+- `scripts/pick.sh` — interactive stack picker: reads `env/mb_versions/` and `env/dwh_source/`, detects running stacks, presents a numbered menu, then hands off to `start.sh`, `stop.sh`, or `nuke.sh`
 - `scripts/start.sh` — full startup: pull image if newer, create volumes, start databases, wait for health, start Metabase, seed
 - `scripts/stop.sh` — stop containers, leave volumes
 - `scripts/nuke.sh` — destructive reset: remove containers, network, volumes, and seed markers
