@@ -1,6 +1,7 @@
 If present, read `.agent-local/copilot-memory.md` before making changes in this repository.
 
 Memory rules:
+- **"Memory" in this repo means this file** — when the user says "update memory" or "save to memory", update `.github/copilot-instructions.md`.
 - Do not write repo knowledge or decisions to the user's `~/.claude/` directory or to `.agent-local/`. Those locations are machine-local and invisible to other contributors.
 - All repo-level memory (design decisions, conventions, seed rules, naming choices) belongs in this file so it travels with the repo.
 - The only exception is genuinely machine-specific state: absolute paths, local tool locations (e.g. `JQ_BIN`), or per-machine overrides. Those belong in `.agent-local/copilot-memory.md` or `env/common.env`, not in `~/.claude/`.
@@ -13,8 +14,8 @@ Respect these repo-specific rules:
 - On Windows Git Bash, keep Docker compose path handling compatible with native Docker on Windows.
 
 Tracked repo notes:
-- Version env files (`env/versions/*.env`) are gitignored and personal — each developer creates their own from `env/versions/template.env.example`. There is no shared canonical version list and no `versions.mk`. Floating `.x` filenames (e.g. `1.61.1.x.env`) track the latest patch; a full 4-part filename (e.g. `1.61.1.3.env`) pins to a specific build.
-- The current dataset profile is `sample-pg15`, using `metabase/qa-databases:postgres-sample-15` from `env/datasets/sample-pg15.env`. The sample data warehouse service is named `sample-dwh` in Docker Compose (not `sample-db`). The Metabase connection display name is `sample_dwh_pg15`.
+- Version env files (`env/mb_versions/*.env`) are gitignored and personal — each developer creates their own from `env/mb_versions/template.env.example`. There is no shared canonical version list. Floating `.x` filenames (e.g. `1.61.1.x.env`) track the latest patch; a full 4-part filename (e.g. `1.61.1.3.env`) pins to a specific build.
+- The current dataset profile is `sample-pg15`, using `metabase/qa-databases:postgres-sample-15` from `env/dwh_source/sample-pg15.env`. The sample data warehouse service is named `sample-dwh` in Docker Compose (not `sample-db`). The Metabase connection display name is `sample_dwh_pg15`.
 - The public workflow is `make start`, `make stop`, and `make nuke`.
 - `make nuke` removes containers, the compose network, external volumes, and the seed marker under `.state/`.
 - `scripts/common.sh` is the shared runtime layer for env loading, path normalization, stack naming, compose invocation, Metabase image refresh (pull if newer, prune old), and Metabase health waiting.

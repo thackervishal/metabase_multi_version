@@ -12,7 +12,7 @@ help:
 	@echo "  make nuke  MB_VERSION=<version> DATASET=<dataset>"
 	@echo
 	@echo "MB_VERSION and DATASET are always required."
-	@echo "Create env/versions/<version>.env from env/versions/template.env.example."
+	@echo "Create env/mb_versions/<version>.env from env/mb_versions/template.env.example."
 	@echo "See README.md for setup instructions."
 
 start:

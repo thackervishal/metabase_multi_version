@@ -1,5 +1,5 @@
 env/common.env
-env/versions/*.env
+env/mb_versions/*.env
 .state/
 snapshots/
 .agent-local/
