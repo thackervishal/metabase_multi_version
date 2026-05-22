@@ -24,12 +24,23 @@ Spin up isolated, fully-seeded Metabase stacks for different versions — each w
 
 ---
 
+## Setting Up Your Local Stacks
+
+Before running any make command, create a stack env file for each Metabase version you want to run. These are personal and gitignored:
+
+1. Copy `env/mb_versions/template.env.example` → `env/mb_versions/<version>.env` (e.g. `1.61.1.x.env`).
+2. Fill in `MB_IMAGE_TAG`, `METABASE_PORT`, `APP_DB_PORT`, `SAMPLE_DB_PORT` — values must not conflict with other local services.
+
+**Naming:** `1.61.1.x.env` floats on the latest patch (auto-pulled on start). `1.61.1.3.env` pins to a specific build.
+
+---
+
 ## Make Commands
 
-Run `make start`, `make stop`, or `make nuke` with no arguments for an interactive picker — reads your local env files, shows which stacks are running, and hands off once you choose.
+Once your stack env files are in place, run `make start`, `make stop`, or `make nuke` with no arguments for an interactive picker — reads your local env files, shows which stacks exist, which are running, and lets you choose which one to start.
 
 | Command | What it does |
-|---|---|
+| --- | --- |
 | `make start` | Interactive — pick a stack to start |
 | `make stop` | Interactive — pick a running stack to stop |
 | `make nuke` | Interactive — pick a stack to destroy |
@@ -42,8 +53,8 @@ make start MB_VERSION=1.61.1.x DATASET=sample-pg15
 make stop  MB_VERSION=1.61.1.x DATASET=sample-pg15
 make nuke  MB_VERSION=1.61.1.x DATASET=sample-pg15
 
-# Multiple stacks simultaneously 
-# (each binds to its own port set which is set in the stacks env/mb_versions/<version>.env .. see next section)
+# Multiple stacks simultaneously
+# (each binds to its own port set defined in its env/mb_versions/<version>.env file)
 make start MB_VERSION=1.59.4.x DATASET=sample-pg15   # → localhost:3000
 make start MB_VERSION=1.60.0.x DATASET=sample-pg15   # → localhost:3200 
 make start MB_VERSION=1.61.1.x DATASET=sample-pg15   # → localhost:3300 
@@ -52,17 +63,6 @@ make start MB_VERSION=1.61.1.x DATASET=sample-pg15   # → localhost:3300
 > **Tips for direct commands:** Use `Ctrl+R` in bash/zsh to reverse-search history and re-run a previous command instantly. Or set `export MB_VERSION=1.61.1.x` and `export DATASET=sample-pg15` in `~/.bashrc` so `make start` picks them up with no arguments.
 >
 > **Running multiple stacks:** Firefox [Multi-Account Containers](https://addons.mozilla.org/en-US/firefox/addon/multi-account-containers/) keeps each stack's session isolated — no session bleed across tabs. Pair with tab groups to stay organised.
-
----
-
-## Setting Up Your Local Stacks
-
-Stack env files are personal and gitignored. Create your own in `env/mb_versions/`:
-
-1. Copy `env/mb_versions/template.env.example` → `env/mb_versions/<version>.env` (e.g. `1.61.1.x.env`).
-2. Fill in `MB_IMAGE_TAG`, `METABASE_PORT`, `APP_DB_PORT`, `SAMPLE_DB_PORT` — values must not conflict with other local services.
-
-**Naming:** `1.61.1.x.env` floats on the latest patch (auto-pulled on start). `1.61.1.3.env` pins to a specific build.
 
 ---
 
