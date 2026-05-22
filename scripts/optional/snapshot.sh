@@ -32,13 +32,13 @@ dump_service() {
 case "$TARGET" in
   all)
     dump_service app-db "$MB_APP_DB_USER" "$MB_APP_DB_PASSWORD" "$MB_APP_DB_NAME" "$SNAPSHOT_DIR/${timestamp}-app-db.sql"
-    dump_service sample-db "$SAMPLE_DB_USER" "$SAMPLE_DB_PASSWORD" "$SAMPLE_DB_NAME" "$SNAPSHOT_DIR/${timestamp}-sample-db.sql"
+    dump_service sample-dwh "$SAMPLE_DB_USER" "$SAMPLE_DB_PASSWORD" "$SAMPLE_DB_NAME" "$SNAPSHOT_DIR/${timestamp}-sample-dwh.sql"
     ;;
   app-db)
     dump_service app-db "$MB_APP_DB_USER" "$MB_APP_DB_PASSWORD" "$MB_APP_DB_NAME" "$SNAPSHOT_DIR/${timestamp}-app-db.sql"
     ;;
-  sample-db)
-    dump_service sample-db "$SAMPLE_DB_USER" "$SAMPLE_DB_PASSWORD" "$SAMPLE_DB_NAME" "$SNAPSHOT_DIR/${timestamp}-sample-db.sql"
+  sample-dwh)
+    dump_service sample-dwh "$SAMPLE_DB_USER" "$SAMPLE_DB_PASSWORD" "$SAMPLE_DB_NAME" "$SNAPSHOT_DIR/${timestamp}-sample-dwh.sql"
     ;;
   *)
     echo "Unsupported TARGET: $TARGET" >&2

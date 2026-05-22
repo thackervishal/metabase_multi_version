@@ -1,5 +1,5 @@
 services:
-  sample-db:
+  sample-dwh:
     image: ${QA_SAMPLE_IMAGE}
     environment:
       POSTGRES_DB: ${SAMPLE_DB_NAME}
@@ -8,7 +8,7 @@ services:
     ports:
       - "${SAMPLE_DB_PORT}:5432"
     volumes:
-      - sample_db_data:/var/lib/postgresql/data
+      - sample_dwh_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${SAMPLE_DB_USER} -d ${SAMPLE_DB_NAME}"]
       interval: 10s
@@ -16,6 +16,6 @@ services:
       retries: 12
 
 volumes:
-  sample_db_data:
+  sample_dwh_data:
     external: true
     name: ${SAMPLE_DB_VOLUME}

@@ -28,7 +28,7 @@ config:
     - name: "{{ env SAMPLE_DB_DISPLAY_NAME }}"
       engine: postgres
       details:
-        host: sample-db
+        host: sample-dwh
         port: 5432
         user: "{{ env SAMPLE_DB_USER }}"
         password: "{{ env SAMPLE_DB_PASSWORD }}"

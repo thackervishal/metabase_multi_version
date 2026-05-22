@@ -15,4 +15,4 @@ load_stack_env "$VERSION" "$DATASET_KEY"
 compose down --remove-orphans
 docker volume rm "$APP_DB_VOLUME" "$SAMPLE_DB_VOLUME" >/dev/null 2>&1 || true
 rm -f "$SAMPLE_DB_SEED_MARKER"
-rm -f "$STACK_SEED_MARKER"
+rm -f "$METABASE_SEED_MARKER"

@@ -76,9 +76,14 @@ ensure_group() {
 ensure_membership() {
   local user_id="$1"
   local group_id="$2"
+  local already_member
+  already_member="$(api_request GET "/api/permissions/group/${group_id}" | jq -r --argjson uid "$user_id" '.members[]? | select(.user_id == $uid) | .user_id')"
+  if [[ -n "$already_member" ]]; then
+    return
+  fi
   local payload
   payload="{\"user_id\":${user_id},\"group_id\":${group_id}}"
-  api_request POST "/api/permissions/membership" "$payload" >/dev/null || true
+  api_request POST "/api/permissions/membership" "$payload" >/dev/null
 }
 
 collection_id_by_name() {
@@ -160,8 +165,8 @@ database_id="$(wait_for_database_id_by_name "$SAMPLE_DB_DISPLAY_NAME")"
 ensure_cache_policy "database" "$database_id" "$DATABASE_CACHE_POLICY_DURATION" "$DATABASE_CACHE_POLICY_UNIT" "$DATABASE_CACHE_POLICY_REFRESH_AUTOMATICALLY"
 
 current_seed_content_version=""
-if [[ -f "$STACK_SEED_MARKER" ]]; then
-  current_seed_content_version="$(<"$STACK_SEED_MARKER")"
+if [[ -f "$METABASE_SEED_MARKER" ]]; then
+  current_seed_content_version="$(<"$METABASE_SEED_MARKER")"
 fi
 
 # Skip content reconciliation only when the seed version already matches.
@@ -362,5 +367,5 @@ if [[ -n "$database_id" ]]; then
   fi
 fi
 
-printf '%s\n' "$SEED_CONTENT_VERSION" > "$STACK_SEED_MARKER"
+printf '%s\n' "$SEED_CONTENT_VERSION" > "$METABASE_SEED_MARKER"
 echo "Metabase seed complete for ${COMPOSE_PROJECT_NAME}."

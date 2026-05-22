@@ -9,4 +9,4 @@ source "$SCRIPT_DIR/../common.sh"
 VERSION="${1:?version is required}"
 DATASET_KEY="${2:?dataset is required}"
 
-"$SCRIPT_DIR/../seed-sample-db.sh" "$VERSION" "$DATASET_KEY"
+"$SCRIPT_DIR/../seed-sample-dwh.sh" "$VERSION" "$DATASET_KEY"

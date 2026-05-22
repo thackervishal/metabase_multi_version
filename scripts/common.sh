@@ -140,9 +140,21 @@ load_stack_env() {
   export MB_LLM_ANTHROPIC_API_KEY="${MB_LLM_ANTHROPIC_API_KEY:-}"
 
   export STACK_STATE_DIR="$STACK_ROOT/.state"
-  export SAMPLE_DB_SEED_MARKER="$STACK_STATE_DIR/${COMPOSE_PROJECT_NAME}.sample-db-seeded"
-  export STACK_SEED_MARKER="$STACK_STATE_DIR/${COMPOSE_PROJECT_NAME}.seeded"
+  export SAMPLE_DB_SEED_MARKER="$STACK_STATE_DIR/${COMPOSE_PROJECT_NAME}.sample-dwh-seeded"
+  export METABASE_SEED_MARKER="$STACK_STATE_DIR/${COMPOSE_PROJECT_NAME}.metabase-seeded"
   export SNAPSHOT_DIR="$STACK_ROOT/snapshots/${COMPOSE_PROJECT_NAME}"
+}
+
+refresh_metabase_image() {
+  local image="metabase/metabase-enterprise:v${MB_IMAGE_TAG}"
+  local old_id new_id
+  old_id="$(docker images -q "$image" 2>/dev/null)"
+  docker pull "$image"
+  new_id="$(docker images -q "$image" 2>/dev/null)"
+  if [[ -n "$old_id" && "$old_id" != "$new_id" ]]; then
+    echo "Removing outdated image ${old_id}."
+    docker rmi "$old_id" 2>/dev/null || true
+  fi
 }
 
 compose() {

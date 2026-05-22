@@ -1,256 +1,166 @@
 # Metabase Local Stack
 
-This repo stands up local Metabase stacks across multiple Metabase versions and explicit dataset profiles. Each stack has one app Postgres database, one sample warehouse, and a small bootstrap step that seeds Metabase after startup.
+Spin up isolated, fully-seeded Metabase stacks for different Metabase versions — each with its own app database, sample data warehouse, users, and starter content — so you can test or explore behaviour across versions without touching each other's data.
 
-## Overall flow
+This is not a tool for testing Metabase upgrades or migrations. Each version runs independently with its own persistent state. Cross-version upgrade comparison may be added in a future iteration.
 
-The repo follows the same lifecycle every time:
+## Before first start
 
-1. Load shared settings from `env/common.env`, version-specific settings from `env/versions/<version>.env`, and dataset settings from `env/datasets/<dataset>.env`.
-2. Start the app database and sample warehouse first.
-3. Wait for both databases to report healthy.
-4. Start Metabase.
-5. Wait for the Metabase health endpoint to respond.
-6. Run a seed step that uses the config-file API key to create groups, memberships, a starter collection, and a sample card.
+**Requirements:**
 
-The stack keeps its database state in external named Docker volumes. `make stop` leaves those volumes alone. `make nuke` removes them.
+- **Windows:** Docker Desktop, Git Bash
+- **macOS:** Docker Desktop, bash
+- **Linux:** Docker Engine + Docker Compose plugin, bash
+- curl, jq (on Windows, `jq.exe` may need to be set explicitly — see below)
+- A Metabase Pro or Enterprise token
+- An Anthropic API key (required to use Metabot with the default provider)
 
-Because Metabase compatibility and sample warehouse compatibility can drift independently over time, the repo treats them as two separate axes:
-
-- `MB_VERSION` selects the Metabase image tag and host ports.
-- `DATASET` selects the sample warehouse image and dataset-specific credentials.
-
-That lets you run combinations like an older Metabase version with an older sample DB profile, or a newer Metabase version with a newer sample DB profile, without changing the shared scripts.
-
-## Startup and bootstrap details
-
-When you run `make start`, the process is split across Docker Compose, Metabase's config-file bootstrap, and a small post-start seed script.
-
-1. `scripts/start.sh` loads the selected env files through `scripts/common.sh`.
-2. It creates the external Docker volumes for the app database and sample database if they do not already exist.
-3. It starts `app-db` and `sample-db` first and waits until both are healthy.
-4. It runs `scripts/seed-sample-db.sh`, which creates and populates a JSON sidecar table in the sample warehouse.
-5. It starts the Metabase container.
-6. Metabase reads `seed/metabase/config.yml` during startup because `compose/base.yml` mounts that file and sets `MB_CONFIG_FILE_PATH`.
-7. The stack derives local defaults for site naming, application naming, embedding, caching, transforms, usage analytics retention, and update checks from `scripts/common.sh`, and passes them into the Metabase container as environment variables.
-8. The config file creates the initial users, registers the sample database connection using the dataset key as its name, and installs a fixed automation API key from `MB_AUTOMATION_API_KEY`.
-9. After Metabase is reachable, `scripts/seed-metabase.sh` waits until that API key works, reconciles cache policies through `/api/cache`, and then reconciles groups, memberships, a starter collection, several starter questions, including a SQL example with a field filter, and a dashboard.
-10. When either seed step succeeds, it writes its own marker under `.state/`. The Metabase content marker stores a seed content version, so later starts can pick up new baseline additions when that version changes. Cache policy reconciliation still runs on every start.
-11. The Metabase seed checks for existing seeded cards and dashboards from the actual seeded collection contents, not from search results, because the search index can lag behind real content state.
-
-## Automation API key
-
-You do not need to generate the seed script API key manually in the Metabase UI for this repo.
-
-- `MB_AUTOMATION_API_KEY` is defined in `env/common.env`.
-- `compose/base.yml` passes that value into the Metabase container as an environment variable.
-- `seed/metabase/config.yml` tells Metabase to create an API key with that exact value during bootstrap.
-- `scripts/seed-metabase.sh` then uses the same key in the `x-api-key` header for its follow-up API calls.
-
-That means the key is predetermined by your env file, but it becomes valid only after Metabase applies the config-file bootstrap during startup. If you rotate the key value in `env/common.env`, you should rebuild from a clean app database state so the bootstrap can recreate it consistently.
-
-## Requirements
-
-- Docker Desktop
-- bash
-- curl
-- jq
-- a Metabase Pro or Enterprise token for config-file loading
-
-## One-time setup
+**Setup steps:**
 
 1. Copy `env/common.env.example` to `env/common.env`.
-2. Set `MB_PREMIUM_EMBEDDING_TOKEN` in `env/common.env`.
-3. On Windows, set `JQ_BIN` in `env/common.env` if `jq.exe` is not available on `PATH` inside Git Bash.
-4. Adjust admin credentials or ports if needed.
+2. Set `MB_PREMIUM_EMBEDDING_TOKEN` — required for Metabase config-file loading.
+3. Set `MB_LLM_ANTHROPIC_API_KEY` — required to back Metabot locally with Anthropic.
+4. On Windows, set `JQ_BIN` if `jq.exe` is not on `PATH` inside Git Bash (e.g. `JQ_BIN=/c/tools/jq/jq.exe`).
+5. Adjust admin credentials or ports if needed.
 
-## Built-in local defaults
+`env/common.env` is gitignored — each user maintains their own copy with their own tokens.
 
-Unless you override them in `env/common.env`, the stack now applies these defaults on startup:
+## Make commands
 
-- Site name: `Metabase <version> Local Stack`
-- Conceal Metabase application name: `<version> Metabase`
-- Built-in H2 sample database: disabled
-- Sample database connection name: dataset key transformed to shell-safe form, for example `sample_pg15`
-- Usage analytics PII retention: enabled
-- Check for updates: disabled
-- Embedding: interactive, modular, SDK, and static embedding enabled
-- Static embedding secret and SDK validation key: seeded with local-only defaults for convenience
-- Caching: persisted models enabled, query cache size set to `10240` KB, query cache TTL set to `3600` seconds, default cache policy set to `1 hour`, and the selected sample database explicitly set to `1 hour`
-- Transforms: enabled
-- AI features and Metabot: enabled, with the local default provider set to `anthropic/claude-sonnet-4-6`
+`MB_VERSION` and `DATASET` are always required — there are no shared defaults since each developer chooses their own versions and port assignments.
 
-The stack does not currently expose a documented Metabase environment variable for a separate “semantic search” admin toggle.
+| Command | What it does |
+|---|---|
+| `make start MB_VERSION=<version> DATASET=<dataset>` | Pull latest image if newer, create volumes, start databases, start Metabase, run seed |
+| `make stop MB_VERSION=<version> DATASET=<dataset>` | Stop containers, leave all data volumes intact |
+| `make nuke MB_VERSION=<version> DATASET=<dataset>` | Remove containers, network, volumes, and seed markers |
 
-To back Metabot with Anthropic locally, set `MB_LLM_ANTHROPIC_API_KEY` in `env/common.env`. The stack now forwards `MB_AI_FEATURES_ENABLED`, `MB_METABOT_ENABLED`, `MB_LLM_METABOT_PROVIDER`, and `MB_LLM_ANTHROPIC_API_KEY` into the Metabase container on `make start`.
-
-## Supported selections
-
-Current Metabase version files:
-
-- `1.59.4`
-- `1.59.5`
-- `1.60.0`
-- `1.61.1`
-
-Current dataset profiles:
-
-- `sample-pg15`
-
-Use explicit `MB_VERSION` and `DATASET` values when working with stacks. The defaults are there for convenience, but the repo is meant to be operated as a version-and-dataset matrix.
-
-## Daily commands
-
-Start a stack:
+Example:
 
 ```bash
-make start MB_VERSION=1.61.1 DATASET=sample-pg15
+make start MB_VERSION=1.61.1.x DATASET=sample-pg15
+make stop  MB_VERSION=1.61.1.x DATASET=sample-pg15
+make nuke  MB_VERSION=1.61.1.x DATASET=sample-pg15
 ```
 
-Stop the stack but keep all data volumes:
+If you run the same version frequently, set `MB_VERSION` and `DATASET` in your shell profile rather than typing them every time.
 
-```bash
-make stop MB_VERSION=1.61.1 DATASET=sample-pg15
-```
+## Setting up your local versions
 
-Nuke the stack completely, including external volumes and the seed marker:
+Version env files are personal and gitignored. Each developer creates their own in `env/versions/`:
 
-```bash
-make nuke MB_VERSION=1.61.1 DATASET=sample-pg15
-```
+1. Copy `env/versions/template.env.example` to `env/versions/<version>.env` (e.g. `1.61.1.x.env`).
+2. Fill in `MB_IMAGE_TAG`, `METABASE_PORT`, `APP_DB_PORT`, and `SAMPLE_DB_PORT` with values that don't conflict with other services running on your machine.
+3. Run `make start MB_VERSION=<version> DATASET=sample-pg15`.
 
-Examples for older versions against the current sample profile:
+**Naming convention:**
+- `<major>.<minor>.<patch>.x.env` (e.g. `1.61.1.x.env`) — floating patch tag, `make start` pulls a newer patch automatically if one exists on Docker Hub.
+- `<major>.<minor>.<patch>.<build>.env` (e.g. `1.61.1.3.env`) — pins to an exact build. Useful when you need to reproduce behaviour from a specific release.
 
-```bash
-make start MB_VERSION=1.59.4 DATASET=sample-pg15
-make start MB_VERSION=1.60.0 DATASET=sample-pg15
-```
+No new compose files are needed when the dataset stays the same.
 
-## What start, stop, and nuke do
+## Adding a new dataset profile
 
-- `make start` creates any missing external volumes, starts Postgres, waits for health, runs the sample warehouse JSON seed, starts Metabase, and then runs the Metabase seed step.
-- `make stop` stops containers only.
-- `make nuke` removes containers, the compose network, both external database volumes, and both seed markers under `.state/`.
+The app database is always Postgres. The sample data warehouse is currently Postgres-only (`sample-pg15`), but the repo is designed to support other database types in future dataset profiles.
 
-## Seeded JSON table
+To add a new dataset:
 
-The sample warehouse seed now creates `public.person_profiles_json` before Metabase starts. It is designed as a sidecar table for `public.people`, so you can join `person_profiles_json.person_id` to `people.id`.
+1. Create `env/datasets/<dataset>.env` with `QA_SAMPLE_IMAGE`, `SAMPLE_DB_NAME`, `SAMPLE_DB_USER`, `SAMPLE_DB_PASSWORD`, `DATASET_NAME`, and `SAMPLE_DB_DISPLAY_NAME`.
+2. Create `compose/datasets/<dataset>.yml` wiring up the `sample-dwh` service for that image.
+3. Append the dataset key to `DATASETS` in `versions.mk`.
+4. Run `make start MB_VERSION=<version> DATASET=<dataset>`.
 
-Table shape:
+Currently supported datasets: `sample-pg15`
 
-- `person_id bigint primary key`: references `people.id`
-- `profile_json jsonb not null`: nested profile payload used for JSON querying demos
-- `profile_source text not null`: currently seeded as `person-profile-seed`
-- `created_at timestamp`: seeded from the linked person record when available
-- `updated_at timestamp`: refreshed on every idempotent reseed
+## Sample data warehouse
 
-The seed currently loads the first 25 people from the sample dataset and inserts one JSON document per person.
+The built-in Metabase H2 sample database is disabled. Instead, each stack connects Metabase to a dedicated Postgres sample data warehouse container (`metabase/qa-databases:postgres-sample-15`), registered in Metabase as `sample_dwh_pg15`.
 
-`profile_json` structure:
+This gives you a real Postgres connection for testing SQL, field filters, JSON operators, and other features that H2 does not support.
 
-- `external_id`: string like `cust-1`
-- `loyalty`: object with `tier`, `points_balance`, and `member_since`
-- `preferences`: object with `preferred_language`, `marketing_opt_in`, `dark_mode`, `contact_channels`, and `timezone`
-- `devices`: array with two objects by default
-- `tags`: array of profile tags such as `vip`, `newsletter`, `repeat-buyer`, or `beta-program`
-- `enrichment`: object with `acquisition_source`, `home_state`, `support`, and `household`
+## Seeded content
 
-Nested sub-objects and arrays:
+On first start (or when the seed content version changes), the seed step creates:
 
-- `devices[0]`: mobile device details with `type`, `platform`, `app_version`, and `push_enabled`
-- `devices[1]`: web device details with `type`, `browser`, and `last_login_days_ago`
-- `enrichment.support`: object with `last_ticket_priority` and `open_ticket_count`
-- `enrichment.household`: object with `has_children` and `estimated_income_band`
+- **Users:** admin, analyst, and sales users
+- **Groups:** Analytics Team and Sales Team, with users assigned as members
+- **Collection:** a starter collection for the connected sample warehouse
+- **Questions:** GUI questions (orders by month, customers by state, products by category, JSON unfolding example), SQL questions (monthly revenue, top categories by revenue), and a native SQL question with a field filter on `People.State`
+- **Dashboard:** a seeded overview dashboard pre-populated with the starter questions
+- **Sample DWH data:** a JSON sidecar table (`person_profiles_json`) seeded into the warehouse before Metabase starts, used for JSON querying demos
 
-This table exists to make Postgres `jsonb` operators easy to test in Metabase. Example patterns include extracting scalar fields, filtering on nested booleans, and expanding arrays of devices or tags.
+If new content is added to the seed script in a future commit, the next `make start` picks up only the additions — existing content is left untouched. The seed tracks a content version in `.state/<stack>.metabase-seeded` and re-runs the content block whenever that version advances.
 
-## Current images
+## What is and isn't git-ignored
 
-- Metabase uses `metabase/metabase-enterprise:v${MB_IMAGE_TAG}` from `compose/base.yml`.
-- The app database uses `postgres:18-alpine`.
-- The `sample-pg15` dataset uses `metabase/qa-databases:postgres-sample-15` from `env/datasets/sample-pg15.env` and is registered in Metabase as `sample_pg15` by default. The seed script requires that exact configured connection name instead of falling back to legacy names.
-
-If you still see older Metabase or sample database images in Docker Desktop, they are just cached local images from previous runs or manual pulls. This repo only uses the dataset overlay selected by `DATASET`, because `scripts/common.sh` calls Docker Compose with `compose/base.yml` plus exactly one file: `compose/datasets/${DATASET}.yml`.
-
-Even if you add multiple dataset overlays under `compose/datasets/`, they can all define the same service name `sample-db`. That is safe because only one dataset overlay is included in any given `make start` invocation.
+| Path | Status | Why |
+| --- | --- | --- |
+| `env/common.env` | git-ignored | Per-user secrets and tokens |
+| `env/versions/*.env` | git-ignored | Per-user: version choice and port assignments vary per machine |
+| `env/versions/template.env.example` | committed | Reference template for creating your own version files |
+| `env/datasets/*.env` | committed | Canonical: describes what a dataset *is*, no port assignments |
+| `versions.mk` | removed | There is no shared default version — each developer decides |
 
 ## Default credentials
 
-These credentials are shared across stacks unless you change the env files. The usernames and passwords stay the same by default; only the exposed host ports vary by `MB_VERSION`.
+Shared across all stacks unless overridden in `env/common.env`. Ports vary by version.
 
-Metabase users from `env/common.env`:
+Metabase users:
 
 - Admin: `admin@example.com` / `metabot1`
 - Analyst: `analyst@example.com` / `metabot1`
 - Sales: `sales@example.com` / `metabot1`
 
-Metabase app database from `env/common.env`:
-
-- Host: `localhost`
-- Port: `APP_DB_PORT` from the selected `env/versions/<version>.env`
-- Database: `metabaseappdb`
-- User: `metabase`
-- Password: `metabase_app_password`
-
-Sample warehouse from the selected dataset env file:
-
-- Host: `localhost`
-- Port: `SAMPLE_DB_PORT` from the selected `env/versions/<version>.env`
-- Database: `sample`
-- User: `metabase`
-- Password: `metasample123`
-
 Example ports for the checked-in versions:
 
-- `1.59.4`: Metabase `3000`, app DB `15402`, sample DB `15403`
-- `1.59.5`: Metabase `3100`, app DB `15412`, sample DB `15413`
-- `1.60.0`: Metabase `3200`, app DB `15422`, sample DB `15423`
-- `1.61.1`: Metabase `3300`, app DB `15432`, sample DB `15433`
+| Version | Metabase | App DB | Sample DWH |
+|---|---|---|---|
+| `1.59.4.x` | 3000 | 15402 | 15403 |
+| `1.59.5.x` | 3100 | 15412 | 15413 |
+| `1.60.0.x` | 3200 | 15422 | 15423 |
+| `1.61.1.x` | 3300 | 15432 | 15433 |
 
-## Add a new Metabase version
+App database: host `localhost`, database `metabaseappdb`, user `metabase`, password `metabase_app_password`.
 
-To add another version by hand:
+Sample DWH: host `localhost`, database `sample`, user `metabase`, password `metasample123`.
 
-1. Create `env/versions/<version>.env`.
-2. Set `MB_IMAGE_TAG`, `METABASE_PORT`, `APP_DB_PORT`, and `SAMPLE_DB_PORT` in that file.
-3. If you want that version to become the default, update `DEFAULT_VERSION` in `versions.mk`.
-4. Append the version string to `MB_VERSIONS` in `versions.mk`.
-5. Start it with `make start MB_VERSION=<version> DATASET=<dataset>`.
+## Built-in local defaults
 
-For a new Metabase version, no new compose files are needed if the dataset stays the same.
+Unless overridden in `env/common.env`:
 
-## Add a new dataset profile
+- Site name: `Metabase <version> Local Stack`
+- Application name: `<version> Metabase`
+- Built-in H2 sample database: disabled
+- Usage analytics PII retention: enabled
+- Check for updates: disabled
+- Embedding: interactive, modular, SDK, and static all enabled
+- Static embedding secret and SDK validation key: local-only defaults
+- Caching: persisted models enabled, query cache size `10240` KB, TTL `3600` seconds, default cache policy `1 hour`, sample DWH cache policy `1 hour`
+- Transforms: enabled
+- AI features and Metabot: enabled, default provider `anthropic/claude-sonnet-4-6`
 
-If a future or older Metabase version needs a different sample warehouse generation, add a new dataset profile instead of mutating an existing one in place.
+## Automation API key
 
-1. Create `env/datasets/<dataset>.env`.
-2. Set `QA_SAMPLE_IMAGE`, `SAMPLE_DB_NAME`, `SAMPLE_DB_USER`, and `SAMPLE_DB_PASSWORD` in that file.
-3. Create `compose/datasets/<dataset>.yml` if the container wiring differs from the existing sample profile.
-4. Append the dataset name to `DATASETS` in `versions.mk`.
-5. Start the stack with `make start MB_VERSION=<version> DATASET=<dataset>`.
+`MB_AUTOMATION_API_KEY` is defined in `env/common.env`. The compose file passes it into the Metabase container, and `seed/metabase/config.yml` tells Metabase to create an API key with that exact value during bootstrap. The seed script then uses the same key for all post-start API calls — no manual key creation needed.
 
-The dataset file is chosen entirely by the `DATASET` value. For example, `DATASET=sample-pg15` causes the scripts to load `env/datasets/sample-pg15.env` and `compose/datasets/sample-pg15.yml`.
+If you rotate the key in `env/common.env`, rebuild from a clean app database so the bootstrap can recreate it consistently.
 
 ## Key files
 
-- `env/common.env` holds local secrets and shared settings.
-- `env/versions/<version>.env` defines the Metabase image tag and port bindings for one version.
-- `env/datasets/<dataset>.env` defines the sample warehouse image and dataset-specific database settings.
-- `compose/datasets/<dataset>.yml` defines the dataset overlay that contributes the `sample-db` service for that dataset profile.
-- `seed/metabase/config.yml` sets up the config-file bootstrap for Metabase.
-- `seed/sample-db/person_profiles_json.sql` defines the JSON sidecar table and dummy `jsonb` seed data for the sample warehouse.
-- `scripts/seed-metabase.sh` adds starter groups, memberships, and sample content after Metabase is up.
-- `scripts/seed-sample-db.sh` applies the sample warehouse JSON seed before Metabase starts.
+- `env/common.env` — local secrets and shared settings (gitignored)
+- `env/versions/<version>.env` — Metabase image tag and port bindings for one version
+- `env/datasets/<dataset>.env` — sample DWH image and dataset-specific settings
+- `compose/datasets/<dataset>.yml` — dataset overlay wiring up the `sample-dwh` service
+- `seed/metabase/config.yml` — config-file bootstrap for users, API key, and database connection
+- `seed/sample-dwh/person_profiles_json.sql` — JSON sidecar table and seed data for the sample DWH
+- `scripts/seed-metabase.sh` — post-start API seeding for groups, users, collection, questions, and dashboard
+- `scripts/seed-sample-dwh.sh` — sample DWH JSON seed, runs before Metabase starts
 
 ## Helper scripts
 
-- `scripts/common.sh` is the shared runtime layer: load env files, derive stack names, normalize Windows paths, wrap `docker compose`, and wait for Metabase health.
-- `scripts/start.sh` is the full startup path: create volumes, start databases, wait for health, start Metabase, then seed.
-- `scripts/stop.sh` stops containers without touching volumes.
-- `scripts/nuke.sh` is the destructive reset path used by `make nuke`.
-- `scripts/seed-metabase.sh` performs the idempotent post-start API seeding, including starter GUI questions, starter SQL questions, a native SQL field-filter example, and a dashboard for the selected dataset. It reconciles existence from the seeded collection contents rather than relying on Metabase search results.
-- `scripts/seed-sample-db.sh` performs the idempotent sample warehouse seed and writes its own `.state` marker so the JSON table is not recreated on every restart.
-- `scripts/optional/snapshot.sh` creates SQL dumps for the app DB and sample DB.
-- `scripts/optional/restore.sh` restores those SQL dumps back into running database containers.
-
-The core stack flow is concentrated in four top-level scripts now: `common.sh`, `start.sh`, `stop.sh`, and `nuke.sh`. The snapshot utilities are still available, but they are pushed into `scripts/optional/` so they do not distract from the main lifecycle.
+- `scripts/common.sh` — shared runtime: load env files, derive stack names, normalize Windows paths, wrap `docker compose`, check for image updates, wait for health
+- `scripts/start.sh` — full startup: pull image if newer, create volumes, start databases, wait for health, start Metabase, seed
+- `scripts/stop.sh` — stop containers, leave volumes
+- `scripts/nuke.sh` — destructive reset: remove containers, network, volumes, and seed markers
+- `scripts/optional/snapshot.sh` — SQL dumps for the app DB and sample DWH
+- `scripts/optional/restore.sh` — restore those dumps into running containers

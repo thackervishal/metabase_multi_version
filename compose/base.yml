@@ -65,7 +65,7 @@ services:
     depends_on:
       app-db:
         condition: service_healthy
-      sample-db:
+      sample-dwh:
         condition: service_healthy
 
 volumes:

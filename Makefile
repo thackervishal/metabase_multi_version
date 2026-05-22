@@ -2,23 +2,18 @@ SHELL := /usr/bin/env bash
 
 ROOT_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 
-include $(ROOT_DIR)/versions.mk
-
-MB_VERSION ?= $(DEFAULT_VERSION)
-DATASET ?= $(DEFAULT_DATASET)
-
 .PHONY: help start stop nuke
 
 help:
 	@echo "Metabase local stack"
 	@echo
 	@echo "  make start MB_VERSION=<version> DATASET=<dataset>"
-	@echo "  make stop MB_VERSION=<version> DATASET=<dataset>"
-	@echo "  make nuke MB_VERSION=<version> DATASET=<dataset>"
+	@echo "  make stop  MB_VERSION=<version> DATASET=<dataset>"
+	@echo "  make nuke  MB_VERSION=<version> DATASET=<dataset>"
 	@echo
-	@echo "Defaults: MB_VERSION=$(DEFAULT_VERSION) DATASET=$(DEFAULT_DATASET)"
-	@echo "Available versions: $(MB_VERSIONS)"
-	@echo "Available datasets: $(DATASETS)"
+	@echo "MB_VERSION and DATASET are always required."
+	@echo "Create env/versions/<version>.env from env/versions/template.env.example."
+	@echo "See README.md for setup instructions."
 
 start:
 	@"$(ROOT_DIR)/scripts/start.sh" "$(MB_VERSION)" "$(DATASET)"
