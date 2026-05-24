@@ -64,8 +64,21 @@ make start MB_VERSION=1.61.1.x DATASET=sample-pg15   # → localhost:3300
 ```
 
 > **Tips for direct commands:** Use `Ctrl+R` in bash/zsh to reverse-search history and re-run a previous command instantly. Or set `export MB_VERSION=1.61.1.x` and `export DATASET=sample-pg15` in `~/.bashrc` so `make start` picks them up with no arguments.
->
-> **Running multiple stacks:** Firefox [Multi-Account Containers](https://addons.mozilla.org/en-US/firefox/addon/multi-account-containers/) keeps each stack's session isolated — no session bleed across tabs. Pair with tab groups to stay organised.
+
+---
+
+## Firefox Multi-Account Containers
+
+Each `make start` automatically creates a named Firefox container for the stack (e.g. `mb-1.61.2.x-sample-pg15-3310-admin`). This keeps each Metabase version in its own isolated browser session — separate cookies, localStorage, and login state, no bleed between tabs.
+
+**How to use it:** After `make start`, open Firefox, right-click any link or new-tab button, and choose **Open in Container → `mb-<version>-<dataset>-<port>-admin`**, then navigate to `localhost:<port>`. With the [Multi-Account Containers](https://addons.mozilla.org/en-US/firefox/addon/multi-account-containers/) extension you can also assign URLs to containers so they open automatically.
+
+**Key behaviours to know:**
+
+- **Firefox is never stopped.** The container is written directly to `containers.json` in your Firefox profile. If Firefox is already running when you start a new stack for the first time, **restart Firefox** to make the new container appear — it will not show up in a live session.
+- **Live-session conflict (rare).** If you create or edit containers inside a running Firefox session *and* a new stack is started at the same time, Firefox may overwrite `containers.json` with its in-memory state on exit, losing the entry that was just written. If a container goes missing, re-run `make start` to recreate it (it's a no-op if the stack is already up).
+- **No Firefox? No problem.** If Firefox is not installed the feature is silently skipped and a tip is printed. Everything else works normally.
+- **No extension? Still works.** Containers are a built-in Firefox feature; the extension just adds UI shortcuts. Without it you can still open tabs in a specific container via the right-click tab menu.
 
 ---
 

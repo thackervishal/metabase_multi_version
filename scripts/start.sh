@@ -36,4 +36,14 @@ wait_for_metabase
 
 trap - ERR
 
-echo "Stack is ready at http://localhost:${METABASE_PORT}"
+container_name="mb-${MB_VERSION}-${DATASET}-${METABASE_PORT}-admin"
+
+ff_result=0
+bash "$SCRIPT_DIR/firefox-container.sh" "$container_name" || ff_result=$?
+
+echo "Stack is ready at localhost:${METABASE_PORT}"
+case $ff_result in
+  0) echo "  Open it in the Firefox container '${container_name}'." ;;
+  2) echo "  Firefox container '${container_name}' created — restart Firefox to use it." ;;
+  1) echo "  Tip: install Firefox + the Multi-Account Containers extension for an isolated session per stack." ;;
+esac
