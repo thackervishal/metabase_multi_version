@@ -26,7 +26,11 @@ Spin up isolated, fully-seeded Metabase stacks for different versions — each w
 
 ## Setting Up Your Local Stacks
 
-Before running any make command, create a stack env file for each Metabase version you want to run. These are personal and gitignored:
+Before running any make command, create a stack env file for each Metabase version you want to run. These are personal and gitignored.
+
+> **Tip:** `make new` walks you through this interactively and optionally starts the stack when done.
+
+To set one up manually:
 
 1. Copy `env/mb_versions/template.env.example` → `env/mb_versions/<version>.env` (e.g. `1.61.1.x.env`).
 2. Fill in `MB_IMAGE_TAG`, `METABASE_PORT`, `APP_DB_PORT`, `SAMPLE_DB_PORT` — values must not conflict with other local services.
