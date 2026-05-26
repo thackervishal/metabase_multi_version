@@ -59,8 +59,31 @@ configure_optional_tool_paths() {
   export PATH="$(dirname "$jq_path"):$PATH"
 }
 
+# Loads env/common.env and configures optional tools.
+# Pre-declares DATASET and MB_VERSION to satisfy set -u in scripts that run
+# before a specific stack version is chosen.
+load_common_env() {
+  local common_env="$STACK_ROOT/env/common.env"
+  if [[ ! -f "$common_env" ]]; then
+    echo "Missing env/common.env — copy from env/common.env.example and fill in values." >&2
+    exit 1
+  fi
+  export DATASET="" MB_VERSION=""
+  set -a
+  # shellcheck disable=SC1090
+  source "$common_env"
+  set +a
+  configure_optional_tool_paths
+}
+
 sanitize_key() {
   echo "$1" | tr '.-' '__'
+}
+
+# Derives the Docker Compose project name for a version+dataset combination.
+# Requires STACK_PROJECT_PREFIX to be set (done by load_common_env / load_stack_env).
+project_name_for() {
+  echo "${STACK_PROJECT_PREFIX}_$(sanitize_key "$1")_$(sanitize_key "$2")"
 }
 
 load_stack_env() {

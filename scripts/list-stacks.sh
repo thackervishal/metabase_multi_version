@@ -8,18 +8,7 @@ STACK_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # shellcheck source=scripts/common.sh
 source "$SCRIPT_DIR/common.sh"
 
-common_env="$STACK_ROOT/env/common.env"
-if [[ ! -f "$common_env" ]]; then
-  echo "Missing env/common.env — copy from env/common.env.example and fill in values." >&2
-  exit 1
-fi
-
-export DATASET="" MB_VERSION=""
-set -a
-# shellcheck disable=SC1090
-source "$common_env"
-set +a
-configure_optional_tool_paths
+load_common_env
 
 # ── Discover versions and datasets ───────────────────────────────────────────
 
@@ -47,13 +36,6 @@ fi
 
 running_projects="$(docker compose ls 2>/dev/null \
   | awk 'NR>1 && $2 ~ /^running/ { print $1 }' || true)"
-
-project_name_for() {
-  local vk dk
-  vk="$(sanitize_key "$1")"
-  dk="$(sanitize_key "$2")"
-  echo "${STACK_PROJECT_PREFIX}_${vk}_${dk}"
-}
 
 is_running() {
   local project
