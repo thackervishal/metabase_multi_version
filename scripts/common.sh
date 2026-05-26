@@ -14,7 +14,7 @@ require_command() {
 
 start_docker_desktop() {
   case "$(uname -s)" in
-    CYGWIN*|MINGW*|MSYS*)
+    CYGWIN*|MINGW*|MSYS*|Darwin*)
       docker desktop start
       ;;
   esac
