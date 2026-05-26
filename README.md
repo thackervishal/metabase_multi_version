@@ -4,14 +4,7 @@ Spin up isolated, fully-seeded Metabase stacks for different versions — each w
 
 > **Under active development.** Structure may change. Fork before making significant local modifications.
 
-## TL;DR
-```sh
-make new
-```
 
-That's it. It'll ask you a few questions, set everything up, and offer to start the stack right away. One command, then you're in. Read the rest when you feel like it.
-
----
 
 ## Before First Start
 
@@ -28,6 +21,15 @@ That's it. It'll ask you a few questions, set everything up, and offer to start 
 3. Adjust credentials or ports if needed.
 
 `env/common.env` is gitignored — each user maintains their own copy.
+
+---
+
+## TL;DR
+```sh
+make new
+```
+
+That's it. It'll ask you a few questions, set everything up, and offer to start the stack right away. One command, then you're in. Read the rest when you feel like it.
 
 ---
 
