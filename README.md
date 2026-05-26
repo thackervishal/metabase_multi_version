@@ -5,9 +5,6 @@ Spin up isolated, fully-seeded Metabase stacks for different versions — each w
 > **Under active development.** Structure may change. Fork before making significant local modifications.
 
 ## TL;DR
-
-A **stack** is one running Metabase instance — its own version, database, sample data, and users, all isolated from any other stack you're running.
-
 ```sh
 make new
 ```
