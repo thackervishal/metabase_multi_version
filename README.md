@@ -62,6 +62,7 @@ Once your stack env files are in place, run `make start`, `make stop`, or `make 
 | `make remove` | Remove a stack entirely — nukes runtime state then deletes the version env file |
 | `make services-up` | Start shared services (Mailpit + webhook tester) manually |
 | `make services-down` | Stop shared services |
+| `make done` | Stop all running stacks and shared services (end of day) |
 
 **Prefer typing the command directly?**
 
@@ -256,6 +257,7 @@ Unless overridden in `env/common.env`:
 | `scripts/remove-stack.sh` | Remove a stack: nukes runtime state for all dataset combos, deletes the version env file |
 | `scripts/start.sh` | Pull image if newer, create volumes, start services, seed |
 | `scripts/stop.sh` | Stop containers, leave volumes intact |
+| `scripts/done.sh` | Stop all running stacks and shared services (end-of-day shortcut) |
 | `scripts/nuke.sh` | Remove containers, network, volumes, seed markers |
 | `scripts/seed-metabase.sh` | Post-start API seeding: groups, users, collection, questions, dashboard |
 | `scripts/seed-sample-dwh.sh` | DWH seed — runs before Metabase starts |

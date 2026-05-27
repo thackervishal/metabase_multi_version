@@ -2,7 +2,7 @@ SHELL := /usr/bin/env bash
 
 ROOT_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 
-.PHONY: help start stop nuke new remove list services-up services-down
+.PHONY: help start stop nuke new remove list services-up services-down done
 
 help:
 	@echo "Metabase local stack"
@@ -15,6 +15,7 @@ help:
 	@echo "  make remove                                      -- nuke a stack and delete its env file"
 	@echo "  make services-up                                 -- start shared services (Mailpit + webhook tester)"
 	@echo "  make services-down                               -- stop shared services"
+	@echo "  make done                                        -- stop all running stacks and shared services"
 	@echo
 	@echo "See README.md for setup instructions."
 
@@ -53,3 +54,6 @@ services-up:
 
 services-down:
 	@bash "$(ROOT_DIR)/scripts/shared-services.sh" down
+
+done:
+	@bash "$(ROOT_DIR)/scripts/done.sh"
