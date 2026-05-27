@@ -215,6 +215,17 @@ appdb_port="${appdb_port:-$sug_appdb}"
 read -rp "  SAMPLE_DB_PORT [${sug_sampledwh}]: " sampledwh_port </dev/tty
 sampledwh_port="${sampledwh_port:-$sug_sampledwh}"
 
+# ── Optional shared services ──────────────────────────────────────────────────
+
+echo
+read -rp "Enable email capture (Mailpit)? [y/N]: " enable_email </dev/tty
+enable_email="${enable_email:-N}"
+[[ "$enable_email" =~ ^[Yy]$ ]] && enable_email_val=true || enable_email_val=false
+
+read -rp "Enable webhook receiver? [y/N]: " enable_webhooks </dev/tty
+enable_webhooks="${enable_webhooks:-N}"
+[[ "$enable_webhooks" =~ ^[Yy]$ ]] && enable_webhooks_val=true || enable_webhooks_val=false
+
 # ── Write env file ────────────────────────────────────────────────────────────
 
 cat > "$env_file" <<EOF
@@ -222,6 +233,8 @@ MB_IMAGE_TAG=${image_tag}
 METABASE_PORT=${metabase_port}
 APP_DB_PORT=${appdb_port}
 SAMPLE_DB_PORT=${sampledwh_port}
+ENABLE_EMAIL=${enable_email_val}
+ENABLE_WEBHOOKS=${enable_webhooks_val}
 EOF
 
 echo

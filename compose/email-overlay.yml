@@ -1,0 +1,6 @@
+services:
+  metabase:
+    environment:
+      MB_EMAIL_SMTP_HOST: mailpit
+      MB_EMAIL_SMTP_PORT: "${MAILPIT_SMTP_PORT:-1025}"
+      MB_EMAIL_FROM_ADDRESS: "${MB_EMAIL_FROM_ADDRESS:-metabase@localhost}"
