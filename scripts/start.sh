@@ -57,6 +57,13 @@ if [[ "${ENABLE_WEBHOOKS}" == "true" ]]; then
       >/dev/null
     echo "Webhook channel created."
   fi
+  # Prime the session so /s/<uuid> works immediately on first click.
+  # Without this, webhook-tester redirects to a new random UUID until
+  # the first real POST arrives and creates the session.
+  curl -fsS -X POST "http://127.0.0.1:${WEBHOOK_PORT:-9000}/${WEBHOOK_SESSION_ID}" \
+    -H "Content-Type: application/json" \
+    -d "{\"source\":\"make start\",\"message\":\"Webhook session initialized for stack ${MB_VERSION} — ready to receive Metabase alerts.\"}" \
+    >/dev/null 2>&1 || true
 fi
 
 trap - ERR
