@@ -58,7 +58,11 @@ find_profiles_ini() {
       echo "$HOME/Library/Application Support/Firefox/profiles.ini"
       ;;
     *)
-      echo "$HOME/.mozilla/firefox/profiles.ini"
+      if [[ -f "$HOME/.mozilla/firefox/profiles.ini" ]]; then
+        echo "$HOME/.mozilla/firefox/profiles.ini"
+      else
+        echo "$HOME/.config/mozilla/firefox/profiles.ini"
+      fi
       ;;
   esac
 }
