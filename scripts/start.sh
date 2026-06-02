@@ -30,6 +30,8 @@ wait_for_service_health sample-dwh 12 2
 
 "$SCRIPT_DIR/seed-sample-dwh.sh" "$VERSION" "$DATASET_KEY"
 
+mkdir -p "$STACK_ROOT/metabot-debug-logs/$COMPOSE_PROJECT_NAME"
+chmod o+w "$STACK_ROOT/metabot-debug-logs/$COMPOSE_PROJECT_NAME"
 compose up -d metabase
 wait_for_metabase
 "$SCRIPT_DIR/seed-metabase.sh" "$VERSION" "$DATASET_KEY"

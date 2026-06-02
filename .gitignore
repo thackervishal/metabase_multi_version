@@ -3,3 +3,4 @@ env/mb_versions/*.env
 .state/
 snapshots/
 .agent-local/
+metabot-debug-logs/

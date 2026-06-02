@@ -54,6 +54,7 @@ services:
       MB_METABOT_ENABLED: ${MB_METABOT_ENABLED}
       MB_LLM_METABOT_PROVIDER: ${MB_LLM_METABOT_PROVIDER}
       MB_LLM_ANTHROPIC_API_KEY: ${MB_LLM_ANTHROPIC_API_KEY}
+      MB_METABOT_DEBUG_LLM_REQUESTS: ${METABOT_DEBUG_LLM:-false}
       SAMPLE_DB_NAME: ${SAMPLE_DB_NAME}
       SAMPLE_DB_USER: ${SAMPLE_DB_USER}
       SAMPLE_DB_PASSWORD: ${SAMPLE_DB_PASSWORD}
@@ -62,6 +63,15 @@ services:
       - "${METABASE_PORT}:3000"
     volumes:
       - ../seed/metabase/config.yml:/metabase-config/config.yml:ro
+      # LLM debug logs: when MB_METABOT_DEBUG_LLM_REQUESTS=true, Metabase writes
+      # one JSON file per LLM API call to /logs/ai/requests/ inside the
+      # container (relative to JVM working dir, which is /). This bind mount surfaces those files at
+      # ./metabot-debug-logs/<stack>/ on the host — one subfolder per stack so
+      # logs from concurrent stacks never intermingle.
+      # Toggle on/off via METABOT_DEBUG_LLM in env/mb_versions/<version>.env.
+      - type: bind
+        source: ../metabot-debug-logs/${COMPOSE_PROJECT_NAME}
+        target: /logs/ai/requests
     depends_on:
       app-db:
         condition: service_healthy
