@@ -1,0 +1,23 @@
+services:
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "${MAILPIT_SMTP_PORT:-1025}:1025"
+      - "${MAILPIT_UI_PORT:-8025}:8025"
+    restart: unless-stopped
+    networks:
+      - mb_shared
+
+  webhook-tester:
+    image: tarampampam/webhook-tester:latest
+    environment:
+      AUTO_CREATE_SESSIONS: "true"
+    ports:
+      - "${WEBHOOK_PORT:-9000}:8080"
+    restart: unless-stopped
+    networks:
+      - mb_shared
+
+networks:
+  mb_shared:
+    external: true

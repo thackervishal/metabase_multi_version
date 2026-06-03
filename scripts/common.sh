@@ -166,6 +166,27 @@ load_stack_env() {
   export SAMPLE_DB_SEED_MARKER="$STACK_STATE_DIR/${COMPOSE_PROJECT_NAME}.sample-dwh-seeded"
   export METABASE_SEED_MARKER="$STACK_STATE_DIR/${COMPOSE_PROJECT_NAME}.metabase-seeded"
   export SNAPSHOT_DIR="$STACK_ROOT/snapshots/${COMPOSE_PROJECT_NAME}"
+
+  export ENABLE_EMAIL="${ENABLE_EMAIL:-false}"
+  export ENABLE_WEBHOOKS="${ENABLE_WEBHOOKS:-false}"
+
+  if [[ "${ENABLE_WEBHOOKS}" == "true" ]]; then
+    export MB_HTTP_CHANNEL_HOST_STRATEGY="allow-private"
+  else
+    export MB_HTTP_CHANNEL_HOST_STRATEGY="${MB_HTTP_CHANNEL_HOST_STRATEGY:-external-only}"
+  fi
+
+  # Deterministic webhook session UUID derived from the stack name (md5, UUID-formatted).
+  # Same stack always gets the same path — stable across restarts.
+  local _hash
+  if command -v md5sum >/dev/null 2>&1; then
+    _hash="$(echo -n "$COMPOSE_PROJECT_NAME" | md5sum | cut -c1-32)"
+  elif command -v md5 >/dev/null 2>&1; then
+    _hash="$(echo -n "$COMPOSE_PROJECT_NAME" | md5 | tr -d ' \n' | cut -c1-32)"
+  else
+    _hash="00000000000000000000000000000000"
+  fi
+  export WEBHOOK_SESSION_ID="${_hash:0:8}-${_hash:8:4}-4${_hash:13:3}-${_hash:16:4}-${_hash:20:12}"
 }
 
 refresh_metabase_image() {
@@ -184,11 +205,15 @@ compose() {
   local docker_stack_root
   docker_stack_root="$(normalize_docker_path "$STACK_ROOT")"
 
-  docker compose \
-    -p "$COMPOSE_PROJECT_NAME" \
-    -f "$docker_stack_root/compose/base.yml" \
-    -f "$docker_stack_root/compose/datasets/${DATASET}.yml" \
-    "$@"
+  local -a compose_files
+  compose_files=(
+    -f "$docker_stack_root/compose/base.yml"
+    -f "$docker_stack_root/compose/datasets/${DATASET}.yml"
+  )
+  [[ "${ENABLE_EMAIL:-false}" == "true" ]] && \
+    compose_files+=(-f "$docker_stack_root/compose/email-overlay.yml")
+
+  docker compose -p "$COMPOSE_PROJECT_NAME" "${compose_files[@]}" "$@"
 }
 
 ensure_external_volumes() {
