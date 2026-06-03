@@ -10,6 +10,7 @@ VERSION="${1:?version is required}"
 DATASET_KEY="${2:?dataset is required}"
 
 require_command docker
+start_docker_desktop
 load_stack_env "$VERSION" "$DATASET_KEY"
 
 compose down --remove-orphans
