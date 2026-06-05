@@ -26,7 +26,8 @@ if [[ -f "$common_env" ]]; then
 fi
 configure_optional_tool_paths
 
-CONTAINER_NAME="${1:?Usage: firefox-container.sh <container-name>}"
+CONTAINER_NAME="${1:?Usage: firefox-container.sh <container-name> [--remove]}"
+MODE="${2:-}"
 
 # ── Firefox installed check ───────────────────────────────────────────────────
 
@@ -164,6 +165,28 @@ add_container() {
   echo "Created Firefox container '${name}' (${color})."
 }
 
+# ── Remove container from containers.json ────────────────────────────────────
+
+remove_container() {
+  local name="$1"
+  local profile_dir="$2"
+  local containers_json="$profile_dir/containers.json"
+  local containers_json_native
+  containers_json_native="$(normalize_docker_path "$containers_json")"
+
+  [[ -f "$containers_json" ]] || return 0
+
+  local existing
+  existing="$(jq -r --arg n "$name" '.identities[] | select(.name == $n) | .name' "$containers_json_native" 2>/dev/null || true)"
+  [[ -n "$existing" ]] || return 0
+
+  local tmp
+  tmp="$(mktemp)"
+  jq --arg name "$name" 'del(.identities[] | select(.name == $name))' "$containers_json_native" > "$tmp"
+  mv "$tmp" "$containers_json"
+  echo "Removed Firefox container '${name}'."
+}
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 if ! firefox_is_installed; then
@@ -174,6 +197,11 @@ profiles_ini="$(find_profiles_ini)"
 [[ -f "$profiles_ini" ]] || exit 1
 
 profile_dir="$(find_profile_dir "$profiles_ini")" || exit 1
+
+if [[ "$MODE" == "--remove" ]]; then
+  remove_container "$CONTAINER_NAME" "$profile_dir"
+  exit 0
+fi
 
 # Check existence before touching Firefox — only close it if we actually need to create the container
 containers_json="$profile_dir/containers.json"

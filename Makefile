@@ -2,7 +2,7 @@ SHELL := /usr/bin/env bash
 
 ROOT_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 
-.PHONY: help start stop nuke new remove list services-up services-down done
+.PHONY: help start stop nuke new remove list services-up services-down done prune
 
 help:
 	@echo "Metabase local stack"
@@ -16,6 +16,7 @@ help:
 	@echo "  make services-up                                 -- start shared services (Mailpit + webhook tester)"
 	@echo "  make services-down                               -- stop shared services"
 	@echo "  make done                                        -- stop all running stacks and shared services"
+	@echo "  make prune                                       -- remove dangling images and orphaned volumes"
 	@echo
 	@echo "See README.md for setup instructions."
 
@@ -57,3 +58,9 @@ services-down:
 
 done:
 	@bash "$(ROOT_DIR)/scripts/done.sh"
+
+prune:
+	@echo "Removing dangling image layers..."
+	@docker image prune -f
+	@echo "Removing orphaned volumes..."
+	@docker volume prune -f
