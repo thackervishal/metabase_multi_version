@@ -15,6 +15,8 @@ require_command jq
 
 load_stack_env "$VERSION" "$DATASET_KEY"
 
+bash "$SCRIPT_DIR/shared-services.sh" ensure-network
+
 if [[ "${ENABLE_EMAIL}" == "true" || "${ENABLE_WEBHOOKS}" == "true" ]]; then
   bash "$SCRIPT_DIR/shared-services.sh" ensure
 fi

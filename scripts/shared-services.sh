@@ -30,7 +30,7 @@ shared_services_running() {
     | grep -qx "$SHARED_PROJECT" 2>/dev/null
 }
 
-case "${1:?Usage: shared-services.sh <up|down|ensure>}" in
+case "${1:?Usage: shared-services.sh <up|down|ensure|ensure-network>}" in
   up)
     ensure_shared_network
     echo "Starting shared services..."
@@ -49,8 +49,11 @@ case "${1:?Usage: shared-services.sh <up|down|ensure>}" in
       docker compose -p "$SHARED_PROJECT" -f "$SHARED_COMPOSE" up -d
     fi
     ;;
+  ensure-network)
+    ensure_shared_network
+    ;;
   *)
-    echo "Unknown command: $1. Use up, down, or ensure." >&2
+    echo "Unknown command: $1. Use up, down, ensure, or ensure-network." >&2
     exit 1
     ;;
 esac
