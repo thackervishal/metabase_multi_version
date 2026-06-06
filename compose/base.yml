@@ -59,6 +59,7 @@ services:
       SAMPLE_DB_USER: ${SAMPLE_DB_USER}
       SAMPLE_DB_PASSWORD: ${SAMPLE_DB_PASSWORD}
       SAMPLE_DB_DISPLAY_NAME: ${SAMPLE_DB_DISPLAY_NAME}
+      MB_HTTP_CHANNEL_HOST_STRATEGY: ${MB_HTTP_CHANNEL_HOST_STRATEGY:-external-only}
     ports:
       - "${METABASE_PORT}:3000"
     volumes:
@@ -72,6 +73,9 @@ services:
       - type: bind
         source: ../metabot-debug-logs/${COMPOSE_PROJECT_NAME}
         target: /logs/ai/requests
+    networks:
+      - default
+      - mb_shared
     depends_on:
       app-db:
         condition: service_healthy
@@ -82,3 +86,7 @@ volumes:
   app_db_data:
     external: true
     name: ${APP_DB_VOLUME}
+
+networks:
+  mb_shared:
+    external: true

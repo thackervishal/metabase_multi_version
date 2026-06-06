@@ -101,10 +101,22 @@ fi
 echo
 for dataset in "${datasets[@]}"; do
   echo "Nuking ${selected_version} / ${dataset}..."
-  "$SCRIPT_DIR/nuke.sh" "$selected_version" "$dataset"
+  "$SCRIPT_DIR/nuke.sh" "$selected_version" "$dataset" --keep-env
 done
 
 echo
+for dataset in "${datasets[@]}"; do
+  if load_stack_env "$selected_version" "$dataset" 2>/dev/null; then
+    container_name="mb-${MB_VERSION}-${dataset}-${METABASE_PORT}-admin"
+    bash "$SCRIPT_DIR/firefox-container.sh" "$container_name" --remove 2>/dev/null || true
+    log_dir="$STACK_ROOT/metabot-debug-logs/${COMPOSE_PROJECT_NAME}"
+    if [[ -d "$log_dir" ]]; then
+      rm -rf "$log_dir"
+      echo "Removed metabot-debug-logs/${COMPOSE_PROJECT_NAME}"
+    fi
+  fi
+done
+
 echo "Deleting env/mb_versions/${selected_version}.env"
 rm "$env_file"
 

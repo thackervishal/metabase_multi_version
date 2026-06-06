@@ -22,10 +22,39 @@ if [[ ${#datasets[@]} -eq 0 ]]; then
   exit 1
 fi
 
+# ── Fetch recent major.minor versions for the prompt hint ────────────────────
+
+recent_majors=""
+recent_majors_hint=""
+_majors_raw="$(curl -fsSL \
+  "https://hub.docker.com/v2/repositories/metabase/metabase-enterprise/tags?page_size=100&ordering=last_updated" \
+  2>/dev/null \
+  | jq -r '.results[].name
+      | select(test("^v[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$"))
+      | select(test("beta|rc|alpha"; "i") | not)
+      | ltrimstr("v")
+      | split(".")[0:2] | join(".")' \
+  | tr -d '\r' \
+  | sort -t. -k1,1n -k2,2n \
+  | uniq \
+  | tail -10 \
+  || true)"
+
+if [[ -n "$_majors_raw" ]]; then
+  recent_majors="$(echo "$_majors_raw" | tr '\n' ',' | sed 's/,$//' | sed 's/,/, /g')"
+  latest_major="$(echo "$_majors_raw" | tail -1 | tr -d '\r')"
+fi
+
 # ── Prompt for major ──────────────────────────────────────────────────────────
 
 echo
-read -rp "Metabase major version (e.g. 1.61): " major_minor </dev/tty
+echo "Let's create a new stack. Which Metabase version do you want?"
+echo
+if [[ -n "${recent_majors:-}" ]]; then
+  echo "  Recent versions: ${recent_majors}"
+  echo
+fi
+read -rp "Metabase major version (e.g. ${latest_major:-1.61}): " major_minor </dev/tty
 if [[ ! "$major_minor" =~ ^[0-9]+\.[0-9]+$ ]]; then
   echo "Invalid format — enter as e.g. 1.61" >&2
   exit 1
@@ -215,6 +244,17 @@ appdb_port="${appdb_port:-$sug_appdb}"
 read -rp "  SAMPLE_DB_PORT [${sug_sampledwh}]: " sampledwh_port </dev/tty
 sampledwh_port="${sampledwh_port:-$sug_sampledwh}"
 
+# ── Optional shared services ──────────────────────────────────────────────────
+
+echo
+read -rp "Enable email capture (Mailpit)? [y/N]: " enable_email </dev/tty
+enable_email="${enable_email:-N}"
+[[ "$enable_email" =~ ^[Yy]$ ]] && enable_email_val=true || enable_email_val=false
+
+read -rp "Enable webhook receiver? [y/N]: " enable_webhooks </dev/tty
+enable_webhooks="${enable_webhooks:-N}"
+[[ "$enable_webhooks" =~ ^[Yy]$ ]] && enable_webhooks_val=true || enable_webhooks_val=false
+
 # ── Write env file ────────────────────────────────────────────────────────────
 
 cat > "$env_file" <<EOF
@@ -222,6 +262,8 @@ MB_IMAGE_TAG=${image_tag}
 METABASE_PORT=${metabase_port}
 APP_DB_PORT=${appdb_port}
 SAMPLE_DB_PORT=${sampledwh_port}
+ENABLE_EMAIL=${enable_email_val}
+ENABLE_WEBHOOKS=${enable_webhooks_val}
 EOF
 
 echo

@@ -60,6 +60,9 @@ Once your stack env files are in place, run `make start`, `make stop`, or `make 
 | `make list` | Show all configured stacks with ports and running status |
 | `make new` | Create a new version env file — drill down major → minor → hotfix or float, suggests ports, optionally starts |
 | `make remove` | Remove a stack entirely — nukes runtime state then deletes the version env file |
+| `make services-up` | Start shared services (Mailpit + webhook tester) manually |
+| `make services-down` | Stop shared services |
+| `make done` | Stop all running stacks and shared services (end of day) |
 
 **Prefer typing the command directly?**
 
@@ -113,6 +116,75 @@ On first start (or when the seed version advances), the seed step creates:
 - **Sample DWH data:** `person_profiles_json` table seeded before Metabase starts
 
 Subsequent `make start` runs pick up only new content — existing items are untouched. Tracked via `.state/<stack>.metabase-seeded`.
+
+---
+
+## Shared Services (Email + Webhooks)
+
+Each stack has two optional feature flags in its version env file (`env/mb_versions/<version>.env`):
+
+```env
+ENABLE_EMAIL=true    # starts Mailpit — catches all outbound email
+ENABLE_WEBHOOKS=true # starts webhook-tester — receives webhook alerts
+```
+
+`make new` prompts for both when creating a new stack. To enable them on an existing stack, edit the env file directly and run `make start` again.
+
+When either flag is `true`, `make start` automatically starts the shared services container (one instance shared across all stacks — Mailpit on port `8025`, webhook-tester on port `9000`).
+
+### Webhooks
+
+**How it works:**
+
+When `ENABLE_WEBHOOKS=true`, `make start` auto-creates a webhook channel in Metabase pointing to the local webhook-tester container. The channel is ready immediately — no manual setup needed. At the end of `make start`, the monitoring URL is printed:
+
+```text
+Webhook tester:   http://localhost:9000/s/<session-id>
+```
+
+The session ID is stable across restarts for the same stack — bookmark it.
+
+**Testing webhooks:**
+
+1. **Quick test:** Go to **Admin → Notifications → Webhook channels** → click **Send a test** on the auto-created channel. The payload appears in the webhook tester immediately.
+
+2. **Alert-based test:** Open any question → click the **bell icon** → **New alert** → set the condition to "Every time" or "When results change" → under **Where to send it**, select the webhook channel → **Save**. Trigger it by clicking **Send now** on the alert. The payload appears in the webhook tester.
+
+**Adding more webhook channels — use the API, not the UI:**
+
+There is a known Metabase bug ([GIT-10174](https://linear.app/metabase/issue/GIT-10174/webhook-destination-cannot-be-saved-from-the-ui)) where the webhook URL field rejects bare hostnames (e.g. `webhook-tester:8080`) with a validation error, even though the backend accepts them fine. This affects all Docker-internal URLs.
+
+The auto-created channel is set up via the API in `scripts/start.sh`, bypassing the UI entirely. If you need to add more channels, do the same:
+
+```bash
+SESSION_ID=$(uuidgen)   # pick once, reuse forever
+curl -X POST "http://localhost:${METABASE_PORT}/api/channel" \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: ${MB_AUTOMATION_API_KEY}" \
+  -d "{
+    \"name\": \"My Webhook\",
+    \"type\": \"channel/http\",
+    \"details\": {
+      \"url\": \"http://webhook-tester:8080/${SESSION_ID}\",
+      \"auth-method\": \"none\",
+      \"fe-form-type\": \"none\"
+    }
+  }"
+```
+
+Then watch it at `http://localhost:9000/s/${SESSION_ID}`.
+
+**Session ID notes:**
+
+- Generate any UUID once (`uuidgen`, an online generator, etc.) and reuse it — the webhook-tester auto-creates the session on the first incoming POST.
+- The UUID is stable across Metabase and stack restarts (it's stored in Metabase's app_db as part of the channel).
+- If the webhook-tester container itself restarts (`make services-down` / `make services-up`), past payloads are lost but the session recreates automatically the next time Metabase fires a webhook to that URL.
+
+`MB_AUTOMATION_API_KEY` and `METABASE_PORT` are in `env/common.env` and your stack's version env file respectively. See `scripts/start.sh` for the full working example.
+
+### Email
+
+When `ENABLE_EMAIL=true`, all email sent by Metabase (alerts, invites, password resets) is captured by [Mailpit](http://localhost:8025) — nothing reaches real addresses.
 
 ---
 
@@ -185,6 +257,7 @@ Unless overridden in `env/common.env`:
 | `scripts/remove-stack.sh` | Remove a stack: nukes runtime state for all dataset combos, deletes the version env file |
 | `scripts/start.sh` | Pull image if newer, create volumes, start services, seed |
 | `scripts/stop.sh` | Stop containers, leave volumes intact |
+| `scripts/done.sh` | Stop all running stacks and shared services (end-of-day shortcut) |
 | `scripts/nuke.sh` | Remove containers, network, volumes, seed markers |
 | `scripts/seed-metabase.sh` | Post-start API seeding: groups, users, collection, questions, dashboard |
 | `scripts/seed-sample-dwh.sh` | DWH seed — runs before Metabase starts |

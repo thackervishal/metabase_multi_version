@@ -14,6 +14,11 @@ start_docker_desktop
 require_command jq
 
 load_stack_env "$VERSION" "$DATASET_KEY"
+
+if [[ "${ENABLE_EMAIL}" == "true" || "${ENABLE_WEBHOOKS}" == "true" ]]; then
+  bash "$SCRIPT_DIR/shared-services.sh" ensure
+fi
+
 refresh_metabase_image
 
 cleanup_on_error() {
@@ -36,6 +41,33 @@ compose up -d metabase
 wait_for_metabase
 "$SCRIPT_DIR/seed-metabase.sh" "$VERSION" "$DATASET_KEY"
 
+if [[ "${ENABLE_WEBHOOKS}" == "true" ]]; then
+  webhook_internal_url="http://webhook-tester:8080/${WEBHOOK_SESSION_ID}"
+  existing="$(curl -fsS "http://127.0.0.1:${METABASE_PORT}/api/channel" \
+    -H "x-api-key: ${MB_AUTOMATION_API_KEY}" \
+    | jq -r --arg url "$webhook_internal_url" \
+        '.[] | select(.details.url == $url) | .name' 2>/dev/null || true)"
+  if [[ -z "$existing" ]]; then
+    curl -fsS -X POST "http://127.0.0.1:${METABASE_PORT}/api/channel" \
+      -H "Content-Type: application/json" \
+      -H "x-api-key: ${MB_AUTOMATION_API_KEY}" \
+      -d "$(jq -nc \
+        --arg name "Local Webhook Tester (${MB_VERSION})" \
+        --arg url "$webhook_internal_url" \
+        '{name: $name, description: "Auto-created by make start.", type: "channel/http",
+          details: {url: $url, "auth-method": "none", "fe-form-type": "none"}}')" \
+      >/dev/null
+    echo "Webhook channel created."
+  fi
+  # Prime the session so /s/<uuid> works immediately on first click.
+  # Without this, webhook-tester redirects to a new random UUID until
+  # the first real POST arrives and creates the session.
+  curl -fsS -X POST "http://127.0.0.1:${WEBHOOK_PORT:-9000}/${WEBHOOK_SESSION_ID}" \
+    -H "Content-Type: application/json" \
+    -d "{\"source\":\"make start\",\"message\":\"Webhook session initialized for stack ${MB_VERSION} — ready to receive Metabase alerts.\"}" \
+    >/dev/null 2>&1 || true
+fi
+
 trap - ERR
 
 container_name="mb-${MB_VERSION}-${DATASET}-${METABASE_PORT}-admin"
@@ -49,3 +81,9 @@ case $ff_result in
   2) echo "  Firefox container '${container_name}' created — restart Firefox to use it." ;;
   1) echo "  Tip: install Firefox + the Multi-Account Containers extension for an isolated session per stack." ;;
 esac
+if [[ "${ENABLE_EMAIL}" == "true" ]]; then
+  echo "  Mailpit (email):  http://localhost:${MAILPIT_UI_PORT:-8025}"
+fi
+if [[ "${ENABLE_WEBHOOKS}" == "true" ]]; then
+  echo "  Webhook tester:   http://localhost:${WEBHOOK_PORT:-9000}/s/${WEBHOOK_SESSION_ID}"
+fi
