@@ -244,7 +244,7 @@ wait_for_metabase() {
   local attempt=0
   until curl -fsS "http://127.0.0.1:${METABASE_PORT}/api/health" >/dev/null 2>&1; do
     attempt=$((attempt + 1))
-    if [[ $attempt -ge 30 ]]; then
+    if [[ $attempt -ge 90 ]]; then
       echo "Metabase did not become healthy in time." >&2
       return 1
     fi
