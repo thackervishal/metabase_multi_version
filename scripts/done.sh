@@ -19,7 +19,7 @@ else
 fi
 
 if docker compose ls 2>/dev/null | awk 'NR>1 { print $1 }' | grep -qx "$SHARED_PROJECT" 2>/dev/null; then
-  bash "$SCRIPT_DIR/shared-services.sh" down
+  bash "$SCRIPT_DIR/shared-services.sh" stop
 fi
 
 echo "All done. Have a good one."

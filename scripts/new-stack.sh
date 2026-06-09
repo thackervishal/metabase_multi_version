@@ -121,7 +121,7 @@ echo
 for i in "${!minor_list[@]}"; do
   minor="${minor_list[$i]}"
   label="$minor"
-  if find "$STACK_ROOT/env/mb_versions" -maxdepth 1 -name "${minor}.*.env" 2>/dev/null | grep -q .; then
+  if find "$STACK_ROOT/env/mb_versions" -maxdepth 1 -name "${minor}.*.env" ! -name "*.x.env" 2>/dev/null | grep -q .; then
     label+="  (stack exists)"
   fi
   printf "  %2d)  %s\n" "$((i + 1))" "$label"

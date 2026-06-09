@@ -38,8 +38,12 @@ case "${1:?Usage: shared-services.sh <up|down|ensure>}" in
     echo "  Mailpit (email) UI: http://localhost:${MAILPIT_UI_PORT:-8025}"
     echo "  Webhook receiver:   http://localhost:${WEBHOOK_PORT:-9000}"
     ;;
-  down)
+  stop)
     echo "Stopping shared services..."
+    docker compose -p "$SHARED_PROJECT" -f "$SHARED_COMPOSE" stop
+    ;;
+  down)
+    echo "Removing shared services..."
     docker compose -p "$SHARED_PROJECT" -f "$SHARED_COMPOSE" down
     ;;
   ensure)
