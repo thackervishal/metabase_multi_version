@@ -30,8 +30,18 @@ done < <(
 )
 
 if [[ ${#versions[@]} -eq 0 ]]; then
-  echo "No version env files found in env/mb_versions/." >&2
-  echo "Create one from env/mb_versions/template.env.example." >&2
+  echo "No stacks configured yet (no version env files in env/mb_versions/)."
+  if [[ "$action" == "start" ]]; then
+    echo
+    read -rp "Would you like to create your first stack now? [Y/n] " answer </dev/tty
+    case "${answer,,}" in
+      ""|y|yes)
+        echo
+        exec "$SCRIPT_DIR/new-stack.sh"
+        ;;
+    esac
+  fi
+  echo "Run 'make new' to create a stack." >&2
   exit 1
 fi
 
