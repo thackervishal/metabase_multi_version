@@ -36,11 +36,13 @@ case "${1:?Usage: shared-services.sh <up|down|ensure|ensure-network>}" in
     ;;
   stop)
     echo "Stopping shared services..."
-    docker compose -p "$SHARED_PROJECT" -f "$SHARED_COMPOSE" stop
+    docker compose -p "$SHARED_PROJECT" -f "$SHARED_COMPOSE" \
+      --profile email --profile webhooks --profile saml stop
     ;;
   down)
     echo "Removing shared services..."
-    docker compose -p "$SHARED_PROJECT" -f "$SHARED_COMPOSE" down
+    docker compose -p "$SHARED_PROJECT" -f "$SHARED_COMPOSE" \
+      --profile email --profile webhooks --profile saml down
     ;;
   ensure)
     ensure_shared_network

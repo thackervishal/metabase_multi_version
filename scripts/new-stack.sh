@@ -91,6 +91,7 @@ done < <(
       | select(startswith($prefix))
       | select(test("^v[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$"))
       | select(test("beta|rc|alpha"; "i") | not)' \
+  | tr -d '\r' \
   | sort -r
 )
 

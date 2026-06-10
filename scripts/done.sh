@@ -4,10 +4,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SHARED_PROJECT="mb_shared"
 
-running_stacks=$(docker compose ls 2>/dev/null \
+all_projects=$(docker compose ls 2>/dev/null \
   | awk 'NR>1 { print $1 }' \
-  | grep -E '^mb_' \
-  | grep -v "^${SHARED_PROJECT}$" || true)
+  | tr -d '\r' \
+  | grep -E '^mb_' || true)
+
+running_stacks=$(echo "$all_projects" | grep -v "^${SHARED_PROJECT}$" || true)
 
 if [[ -z "$running_stacks" ]]; then
   echo "No stacks running."
@@ -18,7 +20,7 @@ else
   done <<< "$running_stacks"
 fi
 
-if docker compose ls 2>/dev/null | awk 'NR>1 { print $1 }' | grep -qx "$SHARED_PROJECT" 2>/dev/null; then
+if echo "$all_projects" | grep -qx "$SHARED_PROJECT" 2>/dev/null; then
   bash "$SCRIPT_DIR/shared-services.sh" stop
 fi
 

@@ -16,7 +16,7 @@ load_common_env
 
 versions=()
 while IFS= read -r f; do
-  versions+=("$(basename "$f" .env)")
+  versions+=("$(basename "$f" .env | tr -d '\r')")
 done < <(
   find "$STACK_ROOT/env/mb_versions" -maxdepth 1 -name "*.env" ! -name "template.env.example" \
   | sort -r
