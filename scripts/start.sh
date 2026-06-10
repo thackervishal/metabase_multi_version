@@ -17,7 +17,7 @@ load_stack_env "$VERSION" "$DATASET_KEY"
 
 bash "$SCRIPT_DIR/shared-services.sh" ensure-network
 
-if [[ "${ENABLE_EMAIL}" == "true" || "${ENABLE_WEBHOOKS}" == "true" ]]; then
+if [[ "${ENABLE_EMAIL}" == "true" || "${ENABLE_WEBHOOKS}" == "true" || "${ENABLE_SAML}" == "true" ]]; then
   bash "$SCRIPT_DIR/shared-services.sh" ensure
 fi
 
@@ -88,4 +88,7 @@ if [[ "${ENABLE_EMAIL}" == "true" ]]; then
 fi
 if [[ "${ENABLE_WEBHOOKS}" == "true" ]]; then
   echo "  Webhook tester:   http://localhost:${WEBHOOK_PORT:-9000}/s/${WEBHOOK_SESSION_ID}"
+fi
+if [[ "${ENABLE_SAML}" == "true" ]]; then
+  echo "  Keycloak admin:   http://localhost:${KEYCLOAK_PORT:-8180}  (admin / admin)"
 fi

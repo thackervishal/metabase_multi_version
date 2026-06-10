@@ -1,5 +1,6 @@
 services:
   mailpit:
+    profiles: [email]
     image: axllent/mailpit:latest
     ports:
       - "${MAILPIT_SMTP_PORT:-1025}:1025"
@@ -9,11 +10,29 @@ services:
       - mb_shared
 
   webhook-tester:
+    profiles: [webhooks]
     image: tarampampam/webhook-tester:latest
     environment:
       AUTO_CREATE_SESSIONS: "true"
     ports:
       - "${WEBHOOK_PORT:-9000}:8080"
+    restart: unless-stopped
+    networks:
+      - mb_shared
+
+  keycloak:
+    profiles: [saml]
+    image: quay.io/keycloak/keycloak:26.2
+    command: start-dev
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_HTTP_PORT: "8080"
+      KC_HOSTNAME_URL: "http://localhost:${KEYCLOAK_PORT:-8180}"
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_ENABLED: "true"
+    ports:
+      - "${KEYCLOAK_PORT:-8180}:8080"
     restart: unless-stopped
     networks:
       - mb_shared

@@ -24,19 +24,15 @@ ensure_shared_network() {
   fi
 }
 
-shared_services_running() {
-  docker compose ls 2>/dev/null \
-    | awk 'NR>1 { print $1 }' \
-    | grep -qx "$SHARED_PROJECT" 2>/dev/null
-}
-
 case "${1:?Usage: shared-services.sh <up|down|ensure|ensure-network>}" in
   up)
     ensure_shared_network
     echo "Starting shared services..."
-    docker compose -p "$SHARED_PROJECT" -f "$SHARED_COMPOSE" up -d
+    docker compose -p "$SHARED_PROJECT" -f "$SHARED_COMPOSE" \
+      --profile email --profile webhooks --profile saml up -d
     echo "  Mailpit (email) UI: http://localhost:${MAILPIT_UI_PORT:-8025}"
     echo "  Webhook receiver:   http://localhost:${WEBHOOK_PORT:-9000}"
+    echo "  Keycloak admin:     http://localhost:${KEYCLOAK_PORT:-8180}"
     ;;
   stop)
     echo "Stopping shared services..."
@@ -48,9 +44,12 @@ case "${1:?Usage: shared-services.sh <up|down|ensure|ensure-network>}" in
     ;;
   ensure)
     ensure_shared_network
-    if ! shared_services_running; then
-      echo "Starting shared services..."
-      docker compose -p "$SHARED_PROJECT" -f "$SHARED_COMPOSE" up -d
+    profiles=()
+    [[ "${ENABLE_EMAIL:-false}"    == "true" ]] && profiles+=(--profile email)
+    [[ "${ENABLE_WEBHOOKS:-false}" == "true" ]] && profiles+=(--profile webhooks)
+    [[ "${ENABLE_SAML:-false}"     == "true" ]] && profiles+=(--profile saml)
+    if [[ ${#profiles[@]} -gt 0 ]]; then
+      docker compose -p "$SHARED_PROJECT" -f "$SHARED_COMPOSE" "${profiles[@]}" up -d
     fi
     ;;
   ensure-network)

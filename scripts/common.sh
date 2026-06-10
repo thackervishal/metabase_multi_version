@@ -169,6 +169,7 @@ load_stack_env() {
 
   export ENABLE_EMAIL="${ENABLE_EMAIL:-false}"
   export ENABLE_WEBHOOKS="${ENABLE_WEBHOOKS:-false}"
+  export ENABLE_SAML="${ENABLE_SAML:-false}"
 
   if [[ "${ENABLE_WEBHOOKS}" == "true" ]]; then
     export MB_HTTP_CHANNEL_HOST_STRATEGY="allow-private"
