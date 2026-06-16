@@ -256,6 +256,10 @@ read -rp "Enable webhook receiver? [y/N]: " enable_webhooks </dev/tty
 enable_webhooks="${enable_webhooks:-N}"
 [[ "$enable_webhooks" =~ ^[Yy]$ ]] && enable_webhooks_val=true || enable_webhooks_val=false
 
+read -rp "Enable SAML SSO (Keycloak)? [y/N]: " enable_saml </dev/tty
+enable_saml="${enable_saml:-N}"
+[[ "$enable_saml" =~ ^[Yy]$ ]] && enable_saml_val=true || enable_saml_val=false
+
 # ── Write env file ────────────────────────────────────────────────────────────
 
 cat > "$env_file" <<EOF
@@ -265,6 +269,7 @@ APP_DB_PORT=${appdb_port}
 SAMPLE_DB_PORT=${sampledwh_port}
 ENABLE_EMAIL=${enable_email_val}
 ENABLE_WEBHOOKS=${enable_webhooks_val}
+ENABLE_SAML=${enable_saml_val}
 EOF
 
 echo
