@@ -27,7 +27,7 @@ done < <(find "$STACK_ROOT/env/dwh_source" -maxdepth 1 -name "*.env" | sort)
 
 if [[ ${#versions[@]} -eq 0 ]]; then
   echo
-  echo "No stacks configured. Run 'make newStack' to create one."
+  echo "No stacks configured. Run 'make new' to create one."
   echo
   exit 0
 fi

@@ -16,7 +16,7 @@ help:
 	@echo "  make services-up                                 -- start shared services (Mailpit + webhook tester)"
 	@echo "  make services-down                               -- stop shared services"
 	@echo "  make done                                        -- stop all running stacks and shared services"
-	@echo "  make prune                                       -- remove dangling images and orphaned volumes"
+	@echo "  make prune                                       -- remove expired retained Metabase images, dangling images, and orphaned volumes"
 	@echo
 	@echo "See README.md for setup instructions."
 
@@ -60,6 +60,8 @@ done:
 	@bash "$(ROOT_DIR)/scripts/done.sh"
 
 prune:
+	@echo "Removing expired retained Metabase images..."
+	@bash "$(ROOT_DIR)/scripts/prune-images.sh"
 	@echo "Removing dangling image layers..."
 	@docker image prune -f
 	@echo "Removing orphaned volumes..."
