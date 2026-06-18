@@ -80,6 +80,42 @@ sanitize_key() {
   echo "$1" | tr '.-' '__'
 }
 
+metabase_image_ref() {
+  echo "metabase/metabase-enterprise:v${MB_IMAGE_TAG}"
+}
+
+image_gc_dir() {
+  echo "$STACK_ROOT/.state/image-gc"
+}
+
+image_gc_key() {
+  local image_ref="$1"
+  echo "$image_ref" | tr '/:.-' '_'
+}
+
+image_gc_marker_path() {
+  local image_ref="$1"
+  echo "$(image_gc_dir)/$(image_gc_key "$image_ref").nuked-at"
+}
+
+clear_image_gc_marker() {
+  local image_ref="$1"
+  rm -f "$(image_gc_marker_path "$image_ref")"
+}
+
+write_image_gc_marker() {
+  local image_ref="$1"
+  local marker_path
+  marker_path="$(image_gc_marker_path "$image_ref")"
+  mkdir -p "$(dirname "$marker_path")"
+  printf 'NUKED_AT=%s\nIMAGE_REF=%s\n' "$(date +%s)" "$image_ref" > "$marker_path"
+}
+
+image_has_container_references() {
+  local image_ref="$1"
+  docker ps -a -q --filter "ancestor=${image_ref}" | grep -q .
+}
+
 # Derives the Docker Compose project name for a version+dataset combination.
 # Requires STACK_PROJECT_PREFIX to be set (done by load_common_env / load_stack_env).
 project_name_for() {
@@ -192,7 +228,8 @@ load_stack_env() {
 }
 
 refresh_metabase_image() {
-  local image="metabase/metabase-enterprise:v${MB_IMAGE_TAG}"
+  local image
+  image="$(metabase_image_ref)"
   local old_id new_id
   old_id="$(docker images -q "$image" 2>/dev/null)"
   docker pull "$image"

@@ -15,6 +15,8 @@ require_command jq
 
 load_stack_env "$VERSION" "$DATASET_KEY"
 
+IMAGE_REF="$(metabase_image_ref)"
+
 bash "$SCRIPT_DIR/shared-services.sh" ensure-network
 
 if [[ "${ENABLE_EMAIL}" == "true" || "${ENABLE_WEBHOOKS}" == "true" || "${ENABLE_SAML}" == "true" ]]; then
@@ -22,6 +24,7 @@ if [[ "${ENABLE_EMAIL}" == "true" || "${ENABLE_WEBHOOKS}" == "true" || "${ENABLE
 fi
 
 refresh_metabase_image
+clear_image_gc_marker "$IMAGE_REF"
 
 cleanup_on_error() {
   echo "Startup failed. Stopping stack." >&2

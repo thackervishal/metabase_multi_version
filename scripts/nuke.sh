@@ -14,10 +14,19 @@ require_command docker
 start_docker_desktop
 load_stack_env "$VERSION" "$DATASET_KEY"
 
+IMAGE_REF="$(metabase_image_ref)"
+
 compose down --remove-orphans
 docker volume rm "$APP_DB_VOLUME" "$SAMPLE_DB_VOLUME" >/dev/null 2>&1 || true
 rm -f "$SAMPLE_DB_SEED_MARKER"
 rm -f "$METABASE_SEED_MARKER"
+
+if image_has_container_references "$IMAGE_REF"; then
+  clear_image_gc_marker "$IMAGE_REF"
+else
+  write_image_gc_marker "$IMAGE_REF"
+  echo "Metabase image marked for cleanup after ${IMAGE_GC_RETENTION_DAYS:-30} days: ${IMAGE_REF}"
+fi
 
 if [[ "$KEEP_ENV" != "--keep-env" ]]; then
   env_file="$STACK_ROOT/env/mb_versions/${VERSION}.env"
