@@ -80,18 +80,36 @@ container_name="mb-${MB_VERSION}-${DATASET}-${METABASE_PORT}-admin"
 ff_result=0
 bash "$SCRIPT_DIR/firefox-container.sh" "$container_name" || ff_result=$?
 
-echo "Stack is ready at localhost:${METABASE_PORT}"
+SEP="------------------------------------------------------------"
+echo
+echo "$SEP"
+echo "  Stack ready: ${COMPOSE_PROJECT_NAME}"
+echo "$SEP"
+echo "  Metabase        http://localhost:${METABASE_PORT}"
+echo "    admin         ${MB_ADMIN_EMAIL}  /  ${MB_ADMIN_PASSWORD}"
+echo "    analyst       ${MB_ANALYST_EMAIL}  /  ${MB_ANALYST_PASSWORD}"
+echo "    sales         ${MB_SALES_EMAIL}  /  ${MB_SALES_PASSWORD}"
 case $ff_result in
-  0) echo "  Open it in the Firefox container '${container_name}'." ;;
-  2) echo "  Firefox container '${container_name}' created — restart Firefox to use it." ;;
-  1) echo "  Tip: install Firefox + the Multi-Account Containers extension for an isolated session per stack." ;;
+  0) echo "    Firefox tab   ${container_name}" ;;
+  2) echo "    Firefox tab   ${container_name}  (restart Firefox to use)" ;;
 esac
-if [[ "${ENABLE_EMAIL}" == "true" ]]; then
-  echo "  Mailpit (email):  http://localhost:${MAILPIT_UI_PORT:-8025}"
+echo
+echo "  App DB          localhost:${APP_DB_PORT}  db=${MB_APP_DB_NAME}"
+echo "                  ${MB_APP_DB_USER}  /  ${MB_APP_DB_PASSWORD}"
+echo
+echo "  Sample DWH      localhost:${SAMPLE_DB_PORT}  db=${SAMPLE_DB_NAME}"
+echo "                  ${SAMPLE_DB_USER}  /  ${SAMPLE_DB_PASSWORD}"
+if [[ "${ENABLE_EMAIL}" == "true" ]] || [[ "${ENABLE_WEBHOOKS}" == "true" ]] || [[ "${ENABLE_SAML}" == "true" ]]; then
+  echo
+  if [[ "${ENABLE_EMAIL}" == "true" ]]; then
+    echo "  Mailpit         http://localhost:${MAILPIT_UI_PORT:-8025}"
+  fi
+  if [[ "${ENABLE_WEBHOOKS}" == "true" ]]; then
+    echo "  Webhooks        http://localhost:${WEBHOOK_PORT:-9000}/s/${WEBHOOK_SESSION_ID}"
+  fi
+  if [[ "${ENABLE_SAML}" == "true" ]]; then
+    echo "  Keycloak        http://localhost:${KEYCLOAK_PORT:-8180}  admin / admin"
+  fi
 fi
-if [[ "${ENABLE_WEBHOOKS}" == "true" ]]; then
-  echo "  Webhook tester:   http://localhost:${WEBHOOK_PORT:-9000}/s/${WEBHOOK_SESSION_ID}"
-fi
-if [[ "${ENABLE_SAML}" == "true" ]]; then
-  echo "  Keycloak admin:   http://localhost:${KEYCLOAK_PORT:-8180}  (admin / admin)"
-fi
+echo "$SEP"
+echo
