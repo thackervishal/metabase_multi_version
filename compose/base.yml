@@ -61,6 +61,11 @@ services:
       SAMPLE_DB_PASSWORD: ${SAMPLE_DB_PASSWORD}
       SAMPLE_DB_DISPLAY_NAME: ${SAMPLE_DB_DISPLAY_NAME}
       MB_HTTP_CHANNEL_HOST_STRATEGY: ${MB_HTTP_CHANNEL_HOST_STRATEGY:-external-only}
+      JAVA_OPTS: "-Xmx1600m"
+    deploy:
+      resources:
+        limits:
+          memory: 2g
     ports:
       - "${METABASE_PORT}:3000"
     volumes:

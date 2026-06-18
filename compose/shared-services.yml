@@ -31,6 +31,11 @@ services:
       KC_HOSTNAME_URL: "http://localhost:${KEYCLOAK_PORT:-8180}"
       KC_HOSTNAME_STRICT: "false"
       KC_HTTP_ENABLED: "true"
+      JAVA_OPTS_APPEND: "-Xmx768m"
+    deploy:
+      resources:
+        limits:
+          memory: 1g
     ports:
       - "${KEYCLOAK_PORT:-8180}:8080"
     restart: unless-stopped
