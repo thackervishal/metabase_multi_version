@@ -5,7 +5,7 @@ services:
     ports:
       - "${MAILPIT_SMTP_PORT:-1025}:1025"
       - "${MAILPIT_UI_PORT:-8025}:8025"
-    restart: unless-stopped
+    restart: "no"
     networks:
       - mb_shared
 
@@ -16,7 +16,7 @@ services:
       AUTO_CREATE_SESSIONS: "true"
     ports:
       - "${WEBHOOK_PORT:-9000}:8080"
-    restart: unless-stopped
+    restart: "no"
     networks:
       - mb_shared
 
@@ -38,7 +38,7 @@ services:
           memory: 1g
     ports:
       - "${KEYCLOAK_PORT:-8180}:8080"
-    restart: unless-stopped
+    restart: "no"
     networks:
       - mb_shared
 
