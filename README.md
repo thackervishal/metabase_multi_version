@@ -60,8 +60,9 @@ Once your stack env files are in place, run `make start`, `make stop`, or `make 
 | `make list` | Show all configured stacks with ports and running status |
 | `make new` | Create a new version env file — drill down major → minor → hotfix or float, suggests ports, optionally starts |
 | `make remove` | Remove a stack entirely — nukes runtime state then deletes the version env file |
-| `make services-up` | Start shared services (Mailpit + webhook tester) manually |
+| `make services-up` | Start all shared services (Mailpit, webhook tester, Keycloak) manually |
 | `make services-down` | Stop shared services |
+| `make prune` | Remove all unused Docker images (tagged and untagged) and orphaned volumes |
 | `make done` | Stop all running stacks and shared services (end of day) |
 
 **Prefer typing the command directly?**
@@ -121,16 +122,19 @@ Subsequent `make start` runs pick up only new content — existing items are unt
 
 ## Shared Services (Email + Webhooks)
 
-Each stack has two optional feature flags in its version env file (`env/mb_versions/<version>.env`):
+Each stack has optional feature flags in its version env file (`env/mb_versions/<version>.env`):
 
 ```env
 ENABLE_EMAIL=true    # starts Mailpit — catches all outbound email
 ENABLE_WEBHOOKS=true # starts webhook-tester — receives webhook alerts
+ENABLE_SAML=true     # starts Keycloak — local SAML identity provider
 ```
 
-`make new` prompts for both when creating a new stack. To enable them on an existing stack, edit the env file directly and run `make start` again.
+`make new` prompts for email and webhooks when creating a new stack. To enable any flag on an existing stack, edit the env file directly and run `make start` again.
 
-When either flag is `true`, `make start` automatically starts the shared services container (one instance shared across all stacks — Mailpit on port `8025`, webhook-tester on port `9000`).
+When any flag is `true`, `make start` automatically starts the relevant shared service. Services are isolated by Docker Compose profile — only the ones you enable are started. All share a single `mb_shared` Docker network and project, so enabling a second flag on a later stack just adds that service alongside whatever is already running.
+
+Ports default to `8025` (Mailpit UI), `9000` (webhook-tester), `8180` (Keycloak). Override any of these in `env/common.env`.
 
 ### Webhooks
 
@@ -251,6 +255,8 @@ Unless overridden in `env/common.env`:
 | `seed/metabase/config.yml` | Bootstrap: users, API key, database connection |
 | `seed/sample-dwh/person_profiles_json.sql` | JSON sidecar table for the sample DWH |
 | `scripts/common.sh` | Shared runtime: env loading, stack naming, path normalization, image refresh, health waiting |
+| `scripts/shared-services.sh` | Manage the `mb_shared` Compose project: up, stop, down, ensure (profile-aware), ensure-network |
+| `scripts/firefox-container.sh` | Create or remove a Firefox Multi-Account Container entry for a stack |
 | `scripts/list-stacks.sh` | Show all configured stacks with ports and running status |
 | `scripts/pick.sh` | Interactive picker: reads env files, detects running stacks, hands off to start/stop/nuke |
 | `scripts/new-stack.sh` | Create a new version env file: queries Docker Hub, suggests ports, optionally starts |
@@ -258,7 +264,7 @@ Unless overridden in `env/common.env`:
 | `scripts/start.sh` | Pull image if newer, create volumes, start services, seed |
 | `scripts/stop.sh` | Stop containers, leave volumes intact |
 | `scripts/done.sh` | Stop all running stacks and shared services (end-of-day shortcut) |
-| `scripts/nuke.sh` | Remove containers, network, volumes, seed markers |
+| `scripts/nuke.sh` | Remove containers, network, volumes, seed markers; optionally delete env file |
 | `scripts/seed-metabase.sh` | Post-start API seeding: groups, users, collection, questions, dashboard |
 | `scripts/seed-sample-dwh.sh` | DWH seed — runs before Metabase starts |
 | `scripts/optional/snapshot.sh` | SQL dumps for app_db and sample DWH |
