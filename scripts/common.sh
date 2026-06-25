@@ -204,6 +204,7 @@ load_stack_env() {
   export METABASE_SEED_MARKER="$STACK_STATE_DIR/${COMPOSE_PROJECT_NAME}.metabase-seeded"
   export SNAPSHOT_DIR="$STACK_ROOT/snapshots/${COMPOSE_PROJECT_NAME}"
 
+  export MB_EMAIL_FROM_ADDRESS="${COMPOSE_PROJECT_NAME}@localhost"
   export ENABLE_EMAIL="${ENABLE_EMAIL:-false}"
   export ENABLE_WEBHOOKS="${ENABLE_WEBHOOKS:-false}"
   export ENABLE_SAML="${ENABLE_SAML:-false}"

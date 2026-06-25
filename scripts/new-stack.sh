@@ -92,7 +92,7 @@ done < <(
       | select(test("^v[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$"))
       | select(test("beta|rc|alpha"; "i") | not)' \
   | tr -d '\r' \
-  | sort -r
+  | sort -V -r
 )
 
 if [[ ${#all_tags[@]} -eq 0 ]]; then
@@ -209,7 +209,7 @@ fi
 
 # ── Suggest ports based on existing env files ─────────────────────────────────
 
-max_metabase=2900
+max_metabase=3290
 max_appdb=15392
 max_sampledwh=15393
 
