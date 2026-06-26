@@ -1,0 +1,22 @@
+services:
+  sample-dwh:
+    image: ${QA_SAMPLE_IMAGE}
+    environment:
+      MYSQL_DATABASE: ${SAMPLE_DB_NAME}
+      MYSQL_USER: ${SAMPLE_DB_USER}
+      MYSQL_PASSWORD: ${SAMPLE_DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${SAMPLE_DB_ROOT_PASSWORD}
+    ports:
+      - "${SAMPLE_DB_PORT}:3306"
+    volumes:
+      - sample_dwh_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "${SAMPLE_DB_USER}", "--password=${SAMPLE_DB_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  sample_dwh_data:
+    external: true
+    name: ${SAMPLE_DB_VOLUME}

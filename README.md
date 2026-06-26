@@ -242,7 +242,7 @@ Unless overridden in `env/common.env`:
 
 ### Automation API Key
 
-`MB_AUTOMATION_API_KEY` in `env/common.env` is injected into the container. `seed/metabase/config.yml` tells Metabase to create an API key with that exact value at bootstrap, so the seed script can call the API immediately — no manual key creation needed. If you rotate it, rebuild from a clean app_db.
+`MB_AUTOMATION_API_KEY` in `env/common.env` is injected into the container. The dataset's config file (`seed/metabase/config-pg15.yml` or `seed/metabase/config-mysql8.yml`) tells Metabase to create an API key with that exact value at bootstrap, so the seed script can call the API immediately — no manual key creation needed. If you rotate it, rebuild from a clean app_db.
 
 ### Files and Scripts
 
@@ -252,7 +252,7 @@ Unless overridden in `env/common.env`:
 | `env/mb_versions/<version>.env` | Image tag and port bindings for one stack (gitignored, personal) |
 | `env/dwh_source/<dataset>.env` | DWH image and dataset-specific settings |
 | `compose/datasets/<dataset>.yml` | Compose overlay wiring up the `sample-dwh` service |
-| `seed/metabase/config.yml` | Bootstrap: users, API key, database connection |
+| `seed/metabase/config-pg15.yml` / `config-mysql8.yml` | Bootstrap: users, API key, database connection (selected via `METABASE_CONFIG_FILE`) |
 | `seed/sample-dwh/person_profiles_json.sql` | JSON sidecar table for the sample DWH |
 | `scripts/common.sh` | Shared runtime: env loading, stack naming, path normalization, image refresh, health waiting |
 | `scripts/shared-services.sh` | Manage the `mb_shared` Compose project: up, stop, down, ensure (profile-aware), ensure-network |

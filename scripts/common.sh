@@ -131,7 +131,7 @@ load_stack_env() {
   local version="$1"
   local dataset="$2"
   local common_env="$STACK_ROOT/env/common.env"
-  local version_env="$STACK_ROOT/env/mb_versions/${version}.env"
+  local version_env="$STACK_ROOT/env/mb_versions/${version}_${dataset}.env"
   local dataset_env="$STACK_ROOT/env/dwh_source/${dataset}.env"
 
   for required_file in "$common_env" "$version_env" "$dataset_env"; do

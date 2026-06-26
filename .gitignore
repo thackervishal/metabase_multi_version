@@ -3,5 +3,6 @@ env/mb_versions/*.env
 .state/
 snapshots/
 .agent-local/
+.mcp.json
 metabot-debug-logs/
 .00_repro_65741/

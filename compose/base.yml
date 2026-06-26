@@ -69,7 +69,7 @@ services:
     ports:
       - "${METABASE_PORT}:3000"
     volumes:
-      - ../seed/metabase/config.yml:/metabase-config/config.yml:ro
+      - ../seed/metabase/${METABASE_CONFIG_FILE}:/metabase-config/config.yml:ro
       # LLM debug logs: when MB_METABOT_DEBUG_LLM_REQUESTS=true, Metabase writes
       # one JSON file per LLM API call to /logs/ai/requests/ inside the
       # container (relative to JVM working dir, which is /). This bind mount surfaces those files at

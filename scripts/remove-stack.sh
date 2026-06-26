@@ -10,22 +10,17 @@ source "$SCRIPT_DIR/common.sh"
 
 load_common_env
 
-# ── Discover versions and datasets ───────────────────────────────────────────
+# ── Discover configured stacks ───────────────────────────────────────────────
 
-versions=()
+env_file_paths=()
 while IFS= read -r f; do
-  versions+=("$(basename "$f" .env | tr -d '\r')")
+  env_file_paths+=("$f")
 done < <(
   find "$STACK_ROOT/env/mb_versions" -maxdepth 1 -name "*.env" ! -name "template.env.example" \
   | sort -V -r
 )
 
-datasets=()
-while IFS= read -r f; do
-  datasets+=("$(basename "$f" .env)")
-done < <(find "$STACK_ROOT/env/dwh_source" -maxdepth 1 -name "*.env" | sort)
-
-if [[ ${#versions[@]} -eq 0 ]]; then
+if [[ ${#env_file_paths[@]} -eq 0 ]]; then
   echo "No stack env files found in env/mb_versions/." >&2
   exit 0
 fi
@@ -41,23 +36,29 @@ is_running() {
   grep -qx "$project" <<< "$running_projects" 2>/dev/null || return 1
 }
 
-# ── Build menu (one entry per version) ───────────────────────────────────────
+# ── Build menu (one entry per env file, version+dataset read from inside it) ──
 
 labels=()
-for version in "${versions[@]}"; do
-  label="$version"
-  for dataset in "${datasets[@]}"; do
-    if is_running "$version" "$dataset"; then
-      label+="  (running — will be stopped)"
-      break
-    fi
-  done
+versions_for_idx=()
+datasets_for_idx=()
+env_files_for_idx=()
+for env_file_path in "${env_file_paths[@]}"; do
+  version="$(grep -E '^MB_IMAGE_TAG=' "$env_file_path" 2>/dev/null | cut -d= -f2 | tr -d '\r' || true)"
+  dataset="$(grep -E '^DATASET=' "$env_file_path" 2>/dev/null | cut -d= -f2 | tr -d '\r' || true)"
+  [[ -z "$version" || -z "$dataset" ]] && continue
+  label="${version}  [${dataset}]"
+  if is_running "$version" "$dataset"; then
+    label+="  (running — will be stopped)"
+  fi
   labels+=("$label")
+  versions_for_idx+=("$version")
+  datasets_for_idx+=("$dataset")
+  env_files_for_idx+=("$env_file_path")
 done
 
 echo
 echo "Select a stack to remove:"
-echo "  Nukes all runtime state for the chosen version and deletes its env file."
+echo "  Stops containers, removes volumes, deletes the env file."
 echo
 
 for i in "${!labels[@]}"; do
@@ -65,7 +66,7 @@ for i in "${!labels[@]}"; do
 done
 echo
 
-selected_version=""
+selected_idx=""
 while true; do
   read -rp "Enter number (or q to quit): " choice </dev/tty
   case "$choice" in
@@ -75,7 +76,7 @@ while true; do
       ;;
     *)
       if [[ "$choice" -ge 1 && "$choice" -le "${#labels[@]}" ]]; then
-        selected_version="${versions[$((choice - 1))]}"
+        selected_idx="$((choice - 1))"
         break
       fi
       echo "  Please enter a number from 1 to ${#labels[@]}, or q to quit."
@@ -83,11 +84,13 @@ while true; do
   esac
 done
 
-env_file="$STACK_ROOT/env/mb_versions/${selected_version}.env"
+selected_version="${versions_for_idx[$selected_idx]}"
+selected_dataset="${datasets_for_idx[$selected_idx]}"
+selected_env_file="${env_files_for_idx[$selected_idx]}"
 
 echo
-echo "Remove stack: ${selected_version}"
-echo "  → nuke all dataset combos + delete env/mb_versions/${selected_version}.env"
+echo "Remove stack: ${selected_version}  [${selected_dataset}]"
+echo "  → delete $(basename "$selected_env_file")"
 echo
 
 read -rp "Are you sure? This cannot be undone. [y/N]: " confirm </dev/tty
@@ -96,18 +99,14 @@ if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
   exit 0
 fi
 
-# ── Nuke all dataset combos, then delete env file ────────────────────────────
+# ── Nuke runtime state, then delete env file ──────────────────────────────────
 
 echo
-for dataset in "${datasets[@]}"; do
-  echo "Nuking ${selected_version} / ${dataset}..."
-  "$SCRIPT_DIR/nuke.sh" "$selected_version" "$dataset" --keep-env
-done
-
-echo
-for dataset in "${datasets[@]}"; do
-  if load_stack_env "$selected_version" "$dataset" 2>/dev/null; then
-    container_name="mb-${MB_VERSION}-${dataset}-${METABASE_PORT}-admin"
+if [[ -n "$selected_dataset" ]]; then
+  echo "Nuking ${selected_version} / ${selected_dataset}..."
+  "$SCRIPT_DIR/nuke.sh" "$selected_version" "$selected_dataset" --keep-env
+  if load_stack_env "$selected_version" "$selected_dataset" 2>/dev/null; then
+    container_name="mb-${MB_VERSION}-${selected_dataset}-${METABASE_PORT}-admin"
     bash "$SCRIPT_DIR/firefox-container.sh" "$container_name" --remove 2>/dev/null || true
     log_dir="$STACK_ROOT/metabot-debug-logs/${COMPOSE_PROJECT_NAME}"
     if [[ -d "$log_dir" ]]; then
@@ -115,10 +114,10 @@ for dataset in "${datasets[@]}"; do
       echo "Removed metabot-debug-logs/${COMPOSE_PROJECT_NAME}"
     fi
   fi
-done
+fi
 
-echo "Deleting env/mb_versions/${selected_version}.env"
-rm "$env_file"
+echo "Deleting $(basename "$selected_env_file")"
+rm "$selected_env_file"
 
 echo
-echo "Stack ${selected_version} removed."
+echo "Stack ${selected_version}  [${selected_dataset}] removed."

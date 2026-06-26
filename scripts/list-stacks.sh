@@ -10,22 +10,17 @@ source "$SCRIPT_DIR/common.sh"
 
 load_common_env
 
-# ── Discover versions and datasets ───────────────────────────────────────────
+# ── Discover configured stacks ───────────────────────────────────────────────
 
-versions=()
+env_file_paths=()
 while IFS= read -r f; do
-  versions+=("$(basename "$f" .env)")
+  env_file_paths+=("$f")
 done < <(
   find "$STACK_ROOT/env/mb_versions" -maxdepth 1 -name "*.env" ! -name "template.env.example" \
   | sort -V -r
 )
 
-datasets=()
-while IFS= read -r f; do
-  datasets+=("$(basename "$f" .env)")
-done < <(find "$STACK_ROOT/env/dwh_source" -maxdepth 1 -name "*.env" | sort)
-
-if [[ ${#versions[@]} -eq 0 ]]; then
+if [[ ${#env_file_paths[@]} -eq 0 ]]; then
   echo
   echo "No stacks configured. Run 'make new' to create one."
   echo
@@ -48,25 +43,21 @@ is_running() {
 echo
 echo "Configured stacks:"
 echo
-printf "  %-22s  %-6s  %s\n" "STACK" "PORT" "STATUS"
-printf "  %-22s  %-6s  %s\n" "----------------------" "------" "------"
+printf "  %-22s  %-20s  %-6s  %s\n" "STACK" "DATASET" "PORT" "STATUS"
+printf "  %-22s  %-20s  %-6s  %s\n" "----------------------" "--------------------" "------" "------"
 
-for version in "${versions[@]}"; do
-  env_file="$STACK_ROOT/env/mb_versions/${version}.env"
-  port="$(grep -E '^METABASE_PORT=' "$env_file" 2>/dev/null | cut -d= -f2 || echo '?')"
+for env_file_path in "${env_file_paths[@]}"; do
+  version="$(grep -E '^MB_IMAGE_TAG=' "$env_file_path" 2>/dev/null | cut -d= -f2 | tr -d '\r' || true)"
+  dataset="$(grep -E '^DATASET=' "$env_file_path" 2>/dev/null | cut -d= -f2 | tr -d '\r' || true)"
+  port="$(grep -E '^METABASE_PORT=' "$env_file_path" 2>/dev/null | cut -d= -f2 || echo '?')"
 
-  running_datasets=()
-  for dataset in "${datasets[@]}"; do
-    is_running "$version" "$dataset" && running_datasets+=("$dataset")
-  done
-
-  if [[ ${#running_datasets[@]} -gt 0 ]]; then
-    status="running  [${running_datasets[*]}]  →  http://localhost:${port}"
+  if [[ -n "$version" && -n "$dataset" ]] && is_running "$version" "$dataset"; then
+    status="running  →  http://localhost:${port}"
   else
     status="stopped"
   fi
 
-  printf "  %-22s  %-6s  %s\n" "$version" "$port" "$status"
+  printf "  %-22s  %-20s  %-6s  %s\n" "${version:-?}" "${dataset:-?}" "$port" "$status"
 done
 
 echo

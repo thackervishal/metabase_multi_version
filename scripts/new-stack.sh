@@ -144,6 +144,34 @@ while true; do
   esac
 done
 
+# ── Select dataset (before version pin, so env file name is deterministic) ────
+
+if [[ ${#datasets[@]} -eq 1 ]]; then
+  selected_dataset="${datasets[0]}"
+  echo
+  echo "Dataset: ${selected_dataset}"
+else
+  echo
+  echo "Select a dataset:"
+  for i in "${!datasets[@]}"; do
+    printf "  %2d)  %s\n" "$((i + 1))" "${datasets[$i]}"
+  done
+  echo
+  while true; do
+    read -rp "Enter number (or q to quit): " dchoice </dev/tty
+    case "$dchoice" in
+      q|Q) exit 0 ;;
+      *)
+        if [[ "$dchoice" =~ ^[0-9]+$ && "$dchoice" -ge 1 && "$dchoice" -le "${#datasets[@]}" ]]; then
+          selected_dataset="${datasets[$((dchoice - 1))]}"
+          break
+        fi
+        echo "  Please enter a number from 1 to ${#datasets[@]}, or q to quit."
+        ;;
+    esac
+  done
+fi
+
 # ── Pick hotfix or float ──────────────────────────────────────────────────────
 
 hotfix_tags=()
@@ -155,18 +183,18 @@ done
 floating_tag="${selected_minor}.x"
 
 echo
-echo "Builds for ${selected_minor} (newest first):"
+echo "Builds for ${selected_minor} / ${selected_dataset} (newest first):"
 echo
 
 for i in "${!hotfix_tags[@]}"; do
   tag="${hotfix_tags[$i]}"
   label="$tag"
-  [[ -f "$STACK_ROOT/env/mb_versions/${tag#v}.env" ]] && label+="  (already configured)"
+  [[ -f "$STACK_ROOT/env/mb_versions/${tag#v}_${selected_dataset}.env" ]] && label+="  (already configured)"
   printf "  %2d)  %s\n" "$((i + 1))" "$label"
 done
 
 float_label="Float on latest patch  →  MB_IMAGE_TAG=${floating_tag}  (auto-pulls newer bugfixes on make start)"
-[[ -f "$STACK_ROOT/env/mb_versions/${floating_tag}.env" ]] && float_label+="  (already configured)"
+[[ -f "$STACK_ROOT/env/mb_versions/${floating_tag}_${selected_dataset}.env" ]] && float_label+="  (already configured)"
 echo
 echo "  f)  ${float_label}"
 echo "  q)  Quit"
@@ -197,13 +225,13 @@ while true; do
   esac
 done
 
-# ── Check env file doesn't already exist ─────────────────────────────────────
+# ── Check this (version, dataset) combination doesn't already exist ───────────
 
-env_file="$STACK_ROOT/env/mb_versions/${image_tag}.env"
+env_file="$STACK_ROOT/env/mb_versions/${image_tag}_${selected_dataset}.env"
 if [[ -f "$env_file" ]]; then
   echo
-  echo "Stack ${image_tag} is already configured — nothing to do."
-  echo "Use 'make start' to start it, or 'make removeStack' to remove it first."
+  echo "Stack ${image_tag} [${selected_dataset}] is already configured — nothing to do."
+  echo "Use 'make start' to start it, or 'make remove' to remove it first."
   exit 0
 fi
 
@@ -233,7 +261,7 @@ sug_sampledwh=$(( max_sampledwh + 10 ))
 
 echo
 echo "Port assignments — press Enter to accept each suggestion."
-echo "If there is a conflict on start, edit env/mb_versions/${image_tag}.env and retry."
+echo "If there is a conflict on start, edit env/mb_versions/${image_tag}_${selected_dataset}.env and retry."
 echo
 
 read -rp "  METABASE_PORT  [${sug_metabase}]: " metabase_port </dev/tty
@@ -264,6 +292,7 @@ enable_saml="${enable_saml:-N}"
 
 cat > "$env_file" <<EOF
 MB_IMAGE_TAG=${image_tag}
+DATASET=${selected_dataset}
 METABASE_PORT=${metabase_port}
 APP_DB_PORT=${appdb_port}
 SAMPLE_DB_PORT=${sampledwh_port}
@@ -273,33 +302,7 @@ ENABLE_SAML=${enable_saml_val}
 EOF
 
 echo
-echo "Created env/mb_versions/${image_tag}.env"
-
-# ── Select dataset (auto if only one) ─────────────────────────────────────────
-
-if [[ ${#datasets[@]} -eq 1 ]]; then
-  selected_dataset="${datasets[0]}"
-else
-  echo
-  echo "Select a dataset:"
-  for i in "${!datasets[@]}"; do
-    printf "  %2d)  %s\n" "$((i + 1))" "${datasets[$i]}"
-  done
-  echo
-  while true; do
-    read -rp "Enter number (or q to quit): " dchoice </dev/tty
-    case "$dchoice" in
-      q|Q) exit 0 ;;
-      *)
-        if [[ "$dchoice" =~ ^[0-9]+$ && "$dchoice" -ge 1 && "$dchoice" -le "${#datasets[@]}" ]]; then
-          selected_dataset="${datasets[$((dchoice - 1))]}"
-          break
-        fi
-        echo "  Please enter a number from 1 to ${#datasets[@]}, or q to quit."
-        ;;
-    esac
-  done
-fi
+echo "Created env/mb_versions/${image_tag}_${selected_dataset}.env"
 
 # ── Optionally start ──────────────────────────────────────────────────────────
 

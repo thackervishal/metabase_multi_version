@@ -281,89 +281,173 @@ fi
 question_name="Sample DB Connectivity Check"
 
 if [[ -n "$database_id" ]]; then
-  connectivity_query="$(jq -nc --argjson database "$database_id" '{type: "native", native: {query: "select current_database() as db_name, current_timestamp as checked_at;", "template-tags": {}}, database: $database}')"
-  connectivity_card_id="$(create_card_if_missing "$question_name" "table" "Simple query proving the sample database is connected." "$connectivity_query")"
+  if [[ "$DATASET_KEY" == sample-mysql* ]]; then
 
-  metadata_attempt=0
-  while :; do
-    refresh_database_metadata
-    orders_table_id="$(table_id_by_name "orders")"
-    people_table_id="$(table_id_by_name "people")"
-    person_profiles_json_table_id="$(table_id_by_name "person_profiles_json")"
-    products_table_id="$(table_id_by_name "products")"
-    orders_created_at_field_id="$(field_id_by_name "orders" "created_at")"
-    people_state_field_id="$(field_id_by_name "people" "state")"
-    people_id_field_id="$(field_id_by_name "people" "id")"
-    person_profiles_person_id_field_id="$(field_id_by_name "person_profiles_json" "person_id")"
-    person_profiles_dark_mode_field_id="$(field_id_by_nfc_path "person_profiles_json" '["profile_json","preferences","dark_mode"]')"
-    products_category_field_id="$(field_id_by_name "products" "category")"
-    orders_total_field_id="$(field_id_by_name "orders" "total")"
+    # ── MySQL content ──────────────────────────────────────────────────────────
 
-    if [[ -n "$orders_table_id" && -n "$people_table_id" && -n "$person_profiles_json_table_id" && -n "$products_table_id" && -n "$orders_created_at_field_id" && -n "$people_state_field_id" && -n "$people_id_field_id" && -n "$person_profiles_person_id_field_id" && -n "$person_profiles_dark_mode_field_id" && -n "$products_category_field_id" && -n "$orders_total_field_id" ]]; then
-      break
+    connectivity_query="$(jq -nc --argjson database "$database_id" \
+      '{type: "native", native: {query: "select DATABASE() as db_name, NOW() as checked_at", "template-tags": {}}, database: $database}')"
+    connectivity_card_id="$(create_card_if_missing "$question_name" "table" "Simple query proving the sample database is connected." "$connectivity_query")"
+
+    metadata_attempt=0
+    while :; do
+      refresh_database_metadata
+      orders_table_id="$(table_id_by_name "orders")"
+      people_table_id="$(table_id_by_name "people")"
+      products_table_id="$(table_id_by_name "products")"
+      orders_created_at_field_id="$(field_id_by_name "orders" "created_at")"
+      people_state_field_id="$(field_id_by_name "people" "state")"
+      products_category_field_id="$(field_id_by_name "products" "category")"
+      orders_total_field_id="$(field_id_by_name "orders" "total")"
+
+      if [[ -n "$orders_table_id" && -n "$people_table_id" && -n "$products_table_id" && -n "$orders_created_at_field_id" && -n "$people_state_field_id" && -n "$products_category_field_id" && -n "$orders_total_field_id" ]]; then
+        break
+      fi
+
+      metadata_attempt=$((metadata_attempt + 1))
+      if [[ $metadata_attempt -ge 30 ]]; then
+        echo "Sample database metadata did not finish syncing in time. Created SQL-only starter content." >&2
+        break
+      fi
+
+      sleep 2
+    done
+
+    if [[ -n "$orders_table_id" && -n "$people_table_id" && -n "$products_table_id" && -n "$orders_created_at_field_id" && -n "$people_state_field_id" && -n "$products_category_field_id" && -n "$orders_total_field_id" ]]; then
+      orders_by_month_query="$(jq -nc \
+        --argjson database "$database_id" \
+        --argjson source_table "$orders_table_id" \
+        --argjson created_at_field "$orders_created_at_field_id" \
+        '{type: "query", database: $database, query: {"source-table": $source_table, aggregation: [["count"]], breakout: [["field", $created_at_field, {"temporal-unit": "month"}]], "order-by": [["asc", ["field", $created_at_field, {"temporal-unit": "month"}]]]}}')"
+      people_by_state_query="$(jq -nc \
+        --argjson database "$database_id" \
+        --argjson source_table "$people_table_id" \
+        --argjson state_field "$people_state_field_id" \
+        '{type: "query", database: $database, query: {"source-table": $source_table, aggregation: [["count"]], breakout: [["field", $state_field, null]], "order-by": [["desc", ["aggregation", 0]]], limit: 10}}')"
+      products_by_category_query="$(jq -nc \
+        --argjson database "$database_id" \
+        --argjson source_table "$products_table_id" \
+        --argjson category_field "$products_category_field_id" \
+        '{type: "query", database: $database, query: {"source-table": $source_table, aggregation: [["count"]], breakout: [["field", $category_field, null]], "order-by": [["desc", ["aggregation", 0]]], limit: 10}}')"
+      monthly_revenue_query="$(jq -nc --argjson database "$database_id" \
+        '{type: "native", native: {query: "select DATE_FORMAT(created_at, '"'"'%Y-%m-01'"'"') as month,\n       count(*) as order_count,\n       round(sum(total), 2) as revenue\nfrom orders\ngroup by 1\norder by 1", "template-tags": {}}, database: $database}')"
+      category_revenue_query="$(jq -nc --argjson database "$database_id" \
+        '{type: "native", native: {query: "select p.category, count(*) as orders, round(sum(o.total), 2) as revenue\nfrom orders o\njoin products p on p.id = o.product_id\ngroup by 1\norder by revenue desc\nlimit 10", "template-tags": {}}, database: $database}')"
+      state_field_filter_query="$(jq -nc \
+        --argjson database "$database_id" \
+        --argjson state_field "$people_state_field_id" \
+        '{type: "native", database: $database, native: {query: "select count(distinct o.id), p.state\nfrom orders o\njoin people p on o.user_id = p.id\nwhere {{fltr_state}}\ngroup by p.state\norder by 1", "template-tags": {"fltr_state": {id: "2441fdaf-2ff8-4fc1-9103-8b4d40f72c85", name: "fltr_state", "display-name": "Fltr State", type: "dimension", "widget-type": "string/=", default: null, dimension: ["field", $state_field, null], alias: "p.state"}}}}')"
+      orders_by_month_card_id="$(create_card_if_missing "Orders by Month" "line" "GUI question showing monthly order volume in ${SAMPLE_DB_DISPLAY_NAME}." "$orders_by_month_query")"
+      people_by_state_card_id="$(create_card_if_missing "Customers by State" "bar" "GUI question showing where customers are concentrated." "$people_by_state_query")"
+      products_by_category_card_id="$(create_card_if_missing "Products by Category" "row" "GUI question showing product catalog mix by category." "$products_by_category_query")"
+      monthly_revenue_card_id="$(create_card_if_missing "Monthly Revenue" "line" "SQL question showing order count and revenue by month." "$monthly_revenue_query")"
+      category_revenue_card_id="$(create_card_if_missing "Top Categories by Revenue" "bar" "SQL question showing which product categories drive revenue." "$category_revenue_query")"
+      state_field_filter_card_id="$(create_card_if_missing "SQL Report with State Field Filter" "table" "SQL question showing a native field filter bound to People.State." "$state_field_filter_query")"
+
+      dashboard_name="${SAMPLE_DB_DISPLAY_NAME} Overview"
+      dashboard_id="$(collection_item_id_by_name "$starter_collection_id" "dashboard" "$dashboard_name")"
+      if [[ -z "$dashboard_id" ]]; then
+        dashboard_payload="$(jq -nc --arg name "$dashboard_name" --arg description "Seeded dashboard for ${SAMPLE_DB_DISPLAY_NAME}." --argjson collection_id "$starter_collection_id" '{name: $name, description: $description, collection_id: $collection_id, parameters: []}')"
+        dashboard_id="$(api_request POST "/api/dashboard" "$dashboard_payload" | jq -r '.id')"
+      fi
+
+      add_card_to_dashboard "$dashboard_id" "$orders_by_month_card_id"      0  0 12 6
+      add_card_to_dashboard "$dashboard_id" "$monthly_revenue_card_id"      0 12 12 6
+      add_card_to_dashboard "$dashboard_id" "$people_by_state_card_id"      6  0  8 6
+      add_card_to_dashboard "$dashboard_id" "$products_by_category_card_id" 6  8  8 6
+      add_card_to_dashboard "$dashboard_id" "$category_revenue_card_id"     6 16  8 6
+      add_card_to_dashboard "$dashboard_id" "$connectivity_card_id"        12  0  8 4
     fi
 
-    metadata_attempt=$((metadata_attempt + 1))
-    if [[ $metadata_attempt -ge 30 ]]; then
-      echo "Sample database metadata did not finish syncing in time. Created SQL-only starter content." >&2
-      break
+  else
+
+    # ── Postgres content (existing) ────────────────────────────────────────────
+
+    connectivity_query="$(jq -nc --argjson database "$database_id" '{type: "native", native: {query: "select current_database() as db_name, current_timestamp as checked_at;", "template-tags": {}}, database: $database}')"
+    connectivity_card_id="$(create_card_if_missing "$question_name" "table" "Simple query proving the sample database is connected." "$connectivity_query")"
+
+    metadata_attempt=0
+    while :; do
+      refresh_database_metadata
+      orders_table_id="$(table_id_by_name "orders")"
+      people_table_id="$(table_id_by_name "people")"
+      person_profiles_json_table_id="$(table_id_by_name "person_profiles_json")"
+      products_table_id="$(table_id_by_name "products")"
+      orders_created_at_field_id="$(field_id_by_name "orders" "created_at")"
+      people_state_field_id="$(field_id_by_name "people" "state")"
+      people_id_field_id="$(field_id_by_name "people" "id")"
+      person_profiles_person_id_field_id="$(field_id_by_name "person_profiles_json" "person_id")"
+      person_profiles_dark_mode_field_id="$(field_id_by_nfc_path "person_profiles_json" '["profile_json","preferences","dark_mode"]')"
+      products_category_field_id="$(field_id_by_name "products" "category")"
+      orders_total_field_id="$(field_id_by_name "orders" "total")"
+
+      if [[ -n "$orders_table_id" && -n "$people_table_id" && -n "$person_profiles_json_table_id" && -n "$products_table_id" && -n "$orders_created_at_field_id" && -n "$people_state_field_id" && -n "$people_id_field_id" && -n "$person_profiles_person_id_field_id" && -n "$person_profiles_dark_mode_field_id" && -n "$products_category_field_id" && -n "$orders_total_field_id" ]]; then
+        break
+      fi
+
+      metadata_attempt=$((metadata_attempt + 1))
+      if [[ $metadata_attempt -ge 30 ]]; then
+        echo "Sample database metadata did not finish syncing in time. Created SQL-only starter content." >&2
+        break
+      fi
+
+      sleep 2
+    done
+
+    if [[ -n "$orders_table_id" && -n "$people_table_id" && -n "$products_table_id" && -n "$orders_created_at_field_id" && -n "$people_state_field_id" && -n "$products_category_field_id" && -n "$orders_total_field_id" ]]; then
+      orders_by_month_query="$(jq -nc \
+        --argjson database "$database_id" \
+        --argjson source_table "$orders_table_id" \
+        --argjson created_at_field "$orders_created_at_field_id" \
+        '{type: "query", database: $database, query: {"source-table": $source_table, aggregation: [["count"]], breakout: [["field", $created_at_field, {"temporal-unit": "month"}]], "order-by": [["asc", ["field", $created_at_field, {"temporal-unit": "month"}]]]}}')"
+      people_by_state_query="$(jq -nc \
+        --argjson database "$database_id" \
+        --argjson source_table "$people_table_id" \
+        --argjson state_field "$people_state_field_id" \
+        '{type: "query", database: $database, query: {"source-table": $source_table, aggregation: [["count"]], breakout: [["field", $state_field, null]], "order-by": [["desc", ["aggregation", 0]]], limit: 10}}')"
+      products_by_category_query="$(jq -nc \
+        --argjson database "$database_id" \
+        --argjson source_table "$products_table_id" \
+        --argjson category_field "$products_category_field_id" \
+        '{type: "query", database: $database, query: {"source-table": $source_table, aggregation: [["count"]], breakout: [["field", $category_field, null]], "order-by": [["desc", ["aggregation", 0]]], limit: 10}}')"
+      monthly_revenue_query="$(jq -nc --argjson database "$database_id" '{type: "native", native: {query: "select date_trunc('"'"'month'"'"', created_at)::date as month, count(*) as order_count, round(sum(total)::numeric, 2) as revenue\nfrom orders\ngroup by 1\norder by 1;", "template-tags": {}}, database: $database}')"
+      category_revenue_query="$(jq -nc --argjson database "$database_id" '{type: "native", native: {query: "select p.category, count(*) as orders, round(sum(o.total)::numeric, 2) as revenue\nfrom orders o\njoin products p on p.id = o.product_id\ngroup by 1\norder by revenue desc\nlimit 10;", "template-tags": {}}, database: $database}')"
+      state_field_filter_query="$(jq -nc \
+        --argjson database "$database_id" \
+        --argjson state_field "$people_state_field_id" \
+        '{type: "native", database: $database, native: {query: "select\n  count(distinct o.id), p.state\nfrom orders o\njoin people p on o.user_id = p.id\nwhere {{fltr_state}}\ngroup by p.state\norder by 1;", "template-tags": {"fltr_state": {id: "2441fdaf-2ff8-4fc1-9103-8b4d40f72c85", name: "fltr_state", "display-name": "Fltr State", type: "dimension", "widget-type": "string/=", default: null, dimension: ["field", $state_field, null], alias: "p.state"}}}}')"
+      json_unfolding_example_query="$(jq -nc \
+        --argjson database "$database_id" \
+        --argjson people_table "$people_table_id" \
+        --argjson person_profiles_json_table "$person_profiles_json_table_id" \
+        --argjson people_id_field "$people_id_field_id" \
+        --argjson person_profiles_person_id_field "$person_profiles_person_id_field_id" \
+        --argjson person_profiles_dark_mode_field "$person_profiles_dark_mode_field_id" \
+        '{type: "query", database: $database, query: {"source-table": $people_table, joins: [{strategy: "left-join", alias: "Person Profiles Json", "source-table": $person_profiles_json_table, fields: "none", condition: ["=", ["field", $people_id_field, null], ["field", $person_profiles_person_id_field, {"join-alias": "Person Profiles Json"}]]}], aggregation: [["count"]], breakout: [["field", $person_profiles_dark_mode_field, {"join-alias": "Person Profiles Json"}]]}}')"
+
+      orders_by_month_card_id="$(create_card_if_missing "Orders by Month" "line" "GUI question showing monthly order volume in ${SAMPLE_DB_DISPLAY_NAME}." "$orders_by_month_query")"
+      people_by_state_card_id="$(create_card_if_missing "Customers by State" "bar" "GUI question showing where customers are concentrated." "$people_by_state_query")"
+      products_by_category_card_id="$(create_card_if_missing "Products by Category" "row" "GUI question showing product catalog mix by category." "$products_by_category_query")"
+      monthly_revenue_card_id="$(create_card_if_missing "Monthly Revenue" "line" "SQL question showing order count and revenue by month." "$monthly_revenue_query")"
+      category_revenue_card_id="$(create_card_if_missing "Top Categories by Revenue" "bar" "SQL question showing which product categories drive revenue." "$category_revenue_query")"
+      state_field_filter_card_id="$(create_card_if_missing "SQL Report with State Field Filter" "table" "SQL question showing a native field filter bound to People.State." "$state_field_filter_query")"
+      json_unfolding_example_card_id="$(create_card_if_missing "JSON Unfolding Example" "bar" "GUI question grouping people by the seeded profile dark mode preference." "$json_unfolding_example_query")"
+
+      dashboard_name="${SAMPLE_DB_DISPLAY_NAME} Overview"
+      dashboard_id="$(collection_item_id_by_name "$starter_collection_id" "dashboard" "$dashboard_name")"
+      if [[ -z "$dashboard_id" ]]; then
+        dashboard_payload="$(jq -nc --arg name "$dashboard_name" --arg description "Seeded dashboard for ${SAMPLE_DB_DISPLAY_NAME}." --argjson collection_id "$starter_collection_id" '{name: $name, description: $description, collection_id: $collection_id, parameters: []}')"
+        dashboard_id="$(api_request POST "/api/dashboard" "$dashboard_payload" | jq -r '.id')"
+      fi
+
+      add_card_to_dashboard "$dashboard_id" "$orders_by_month_card_id" 0 0 12 6
+      add_card_to_dashboard "$dashboard_id" "$monthly_revenue_card_id" 0 12 12 6
+      add_card_to_dashboard "$dashboard_id" "$people_by_state_card_id" 6 0 8 6
+      add_card_to_dashboard "$dashboard_id" "$products_by_category_card_id" 6 8 8 6
+      add_card_to_dashboard "$dashboard_id" "$category_revenue_card_id" 6 16 8 6
+      add_card_to_dashboard "$dashboard_id" "$connectivity_card_id" 12 0 8 4
     fi
 
-    sleep 2
-  done
-
-  if [[ -n "$orders_table_id" && -n "$people_table_id" && -n "$products_table_id" && -n "$orders_created_at_field_id" && -n "$people_state_field_id" && -n "$products_category_field_id" && -n "$orders_total_field_id" ]]; then
-    orders_by_month_query="$(jq -nc \
-      --argjson database "$database_id" \
-      --argjson source_table "$orders_table_id" \
-      --argjson created_at_field "$orders_created_at_field_id" \
-      '{type: "query", database: $database, query: {"source-table": $source_table, aggregation: [["count"]], breakout: [["field", $created_at_field, {"temporal-unit": "month"}]], "order-by": [["asc", ["field", $created_at_field, {"temporal-unit": "month"}]]]}}')"
-    people_by_state_query="$(jq -nc \
-      --argjson database "$database_id" \
-      --argjson source_table "$people_table_id" \
-      --argjson state_field "$people_state_field_id" \
-      '{type: "query", database: $database, query: {"source-table": $source_table, aggregation: [["count"]], breakout: [["field", $state_field, null]], "order-by": [["desc", ["aggregation", 0]]], limit: 10}}')"
-    products_by_category_query="$(jq -nc \
-      --argjson database "$database_id" \
-      --argjson source_table "$products_table_id" \
-      --argjson category_field "$products_category_field_id" \
-      '{type: "query", database: $database, query: {"source-table": $source_table, aggregation: [["count"]], breakout: [["field", $category_field, null]], "order-by": [["desc", ["aggregation", 0]]], limit: 10}}')"
-    monthly_revenue_query="$(jq -nc --argjson database "$database_id" '{type: "native", native: {query: "select date_trunc('"'"'month'"'"', created_at)::date as month, count(*) as order_count, round(sum(total)::numeric, 2) as revenue\nfrom orders\ngroup by 1\norder by 1;", "template-tags": {}}, database: $database}')"
-    category_revenue_query="$(jq -nc --argjson database "$database_id" '{type: "native", native: {query: "select p.category, count(*) as orders, round(sum(o.total)::numeric, 2) as revenue\nfrom orders o\njoin products p on p.id = o.product_id\ngroup by 1\norder by revenue desc\nlimit 10;", "template-tags": {}}, database: $database}')"
-    state_field_filter_query="$(jq -nc \
-      --argjson database "$database_id" \
-      --argjson state_field "$people_state_field_id" \
-      '{type: "native", database: $database, native: {query: "select\n  count(distinct o.id), p.state\nfrom orders o\njoin people p on o.user_id = p.id\nwhere {{fltr_state}}\ngroup by p.state\norder by 1;", "template-tags": {"fltr_state": {id: "2441fdaf-2ff8-4fc1-9103-8b4d40f72c85", name: "fltr_state", "display-name": "Fltr State", type: "dimension", "widget-type": "string/=", default: null, dimension: ["field", $state_field, null], alias: "p.state"}}}}')"
-    json_unfolding_example_query="$(jq -nc \
-      --argjson database "$database_id" \
-      --argjson people_table "$people_table_id" \
-      --argjson person_profiles_json_table "$person_profiles_json_table_id" \
-      --argjson people_id_field "$people_id_field_id" \
-      --argjson person_profiles_person_id_field "$person_profiles_person_id_field_id" \
-      --argjson person_profiles_dark_mode_field "$person_profiles_dark_mode_field_id" \
-      '{type: "query", database: $database, query: {"source-table": $people_table, joins: [{strategy: "left-join", alias: "Person Profiles Json", "source-table": $person_profiles_json_table, fields: "none", condition: ["=", ["field", $people_id_field, null], ["field", $person_profiles_person_id_field, {"join-alias": "Person Profiles Json"}]]}], aggregation: [["count"]], breakout: [["field", $person_profiles_dark_mode_field, {"join-alias": "Person Profiles Json"}]]}}')"
-
-    orders_by_month_card_id="$(create_card_if_missing "Orders by Month" "line" "GUI question showing monthly order volume in ${SAMPLE_DB_DISPLAY_NAME}." "$orders_by_month_query")"
-    people_by_state_card_id="$(create_card_if_missing "Customers by State" "bar" "GUI question showing where customers are concentrated." "$people_by_state_query")"
-    products_by_category_card_id="$(create_card_if_missing "Products by Category" "row" "GUI question showing product catalog mix by category." "$products_by_category_query")"
-    monthly_revenue_card_id="$(create_card_if_missing "Monthly Revenue" "line" "SQL question showing order count and revenue by month." "$monthly_revenue_query")"
-    category_revenue_card_id="$(create_card_if_missing "Top Categories by Revenue" "bar" "SQL question showing which product categories drive revenue." "$category_revenue_query")"
-    state_field_filter_card_id="$(create_card_if_missing "SQL Report with State Field Filter" "table" "SQL question showing a native field filter bound to People.State." "$state_field_filter_query")"
-    json_unfolding_example_card_id="$(create_card_if_missing "JSON Unfolding Example" "bar" "GUI question grouping people by the seeded profile dark mode preference." "$json_unfolding_example_query")"
-
-    dashboard_name="${SAMPLE_DB_DISPLAY_NAME} Overview"
-    dashboard_id="$(collection_item_id_by_name "$starter_collection_id" "dashboard" "$dashboard_name")"
-    if [[ -z "$dashboard_id" ]]; then
-      dashboard_payload="$(jq -nc --arg name "$dashboard_name" --arg description "Seeded dashboard for ${SAMPLE_DB_DISPLAY_NAME}." --argjson collection_id "$starter_collection_id" '{name: $name, description: $description, collection_id: $collection_id, parameters: []}')"
-      dashboard_id="$(api_request POST "/api/dashboard" "$dashboard_payload" | jq -r '.id')"
-    fi
-
-    add_card_to_dashboard "$dashboard_id" "$orders_by_month_card_id" 0 0 12 6
-    add_card_to_dashboard "$dashboard_id" "$monthly_revenue_card_id" 0 12 12 6
-    add_card_to_dashboard "$dashboard_id" "$people_by_state_card_id" 6 0 8 6
-    add_card_to_dashboard "$dashboard_id" "$products_by_category_card_id" 6 8 8 6
-    add_card_to_dashboard "$dashboard_id" "$category_revenue_card_id" 6 16 8 6
-    add_card_to_dashboard "$dashboard_id" "$connectivity_card_id" 12 0 8 4
   fi
 fi
 

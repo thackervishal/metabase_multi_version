@@ -80,6 +80,17 @@ container_name="mb-${MB_VERSION}-${DATASET}-${METABASE_PORT}-admin"
 ff_result=0
 bash "$SCRIPT_DIR/firefox-container.sh" "$container_name" || ff_result=$?
 
+mcp_result=0
+if command -v claude &>/dev/null; then
+  claude mcp remove "$COMPOSE_PROJECT_NAME" -s project 2>/dev/null || true
+  claude mcp add --transport http "$COMPOSE_PROJECT_NAME" \
+    "http://127.0.0.1:${METABASE_PORT}/api/metabase-mcp" \
+    --header "x-api-key: ${MB_AUTOMATION_API_KEY}" \
+    -s project >/dev/null 2>&1 || mcp_result=1
+else
+  mcp_result=2
+fi
+
 SEP="------------------------------------------------------------"
 echo
 echo "$SEP"
@@ -92,6 +103,10 @@ echo "    sales         ${MB_SALES_EMAIL}  /  ${MB_SALES_PASSWORD}"
 case $ff_result in
   0) echo "    Firefox tab   ${container_name}" ;;
   2) echo "    Firefox tab   ${container_name}  (restart Firefox to use)" ;;
+esac
+case $mcp_result in
+  0) echo "    MCP server    ${COMPOSE_PROJECT_NAME}  (start new Claude session)" ;;
+  1) echo "    MCP server    registration failed" ;;
 esac
 echo
 echo "  App DB          localhost:${APP_DB_PORT}  db=${MB_APP_DB_NAME}"

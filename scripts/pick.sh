@@ -12,24 +12,20 @@ action="${1:?Usage: pick.sh <start|stop|nuke>}"
 
 load_common_env
 
-# ── Discover available versions and datasets ──────────────────────────────────
+# ── Discover configured stacks ────────────────────────────────────────────────
+# Each env file encodes both version and dataset in its name (e.g.
+# 1.62.2.x_sample-pg15.env). MB_IMAGE_TAG and DATASET are read from file
+# content so that pick.sh passes clean values to downstream scripts.
 
-versions=()
+env_file_paths=()
 while IFS= read -r f; do
-  versions+=("$(basename "$f" .env | tr -d '\r')")
+  env_file_paths+=("$f")
 done < <(
   find "$STACK_ROOT/env/mb_versions" -maxdepth 1 -name "*.env" ! -name "template.env.example" \
   | sort -V -r
 )
 
-datasets=()
-while IFS= read -r f; do
-  datasets+=("$(basename "$f" .env)")
-done < <(
-  find "$STACK_ROOT/env/dwh_source" -maxdepth 1 -name "*.env" | sort
-)
-
-if [[ ${#versions[@]} -eq 0 ]]; then
+if [[ ${#env_file_paths[@]} -eq 0 ]]; then
   echo "No stacks configured yet (no version env files in env/mb_versions/)."
   if [[ "$action" == "start" ]]; then
     echo
@@ -41,13 +37,8 @@ if [[ ${#versions[@]} -eq 0 ]]; then
         ;;
     esac
   fi
-  echo "Run 'make new' to create a stack." >&2
-  exit 1
-fi
-
-if [[ ${#datasets[@]} -eq 0 ]]; then
-  echo "No dataset profiles found in env/dwh_source/." >&2
-  exit 1
+  echo "Run 'make new' to create a stack."
+  exit 0
 fi
 
 # ── Detect running stacks ─────────────────────────────────────────────────────
@@ -65,34 +56,36 @@ is_running() {
 
 labels=()
 combos=()
-for version in "${versions[@]}"; do
-  for dataset in "${datasets[@]}"; do
-    if is_running "$version" "$dataset"; then
-      running=true
-    else
-      running=false
-    fi
+for env_file_path in "${env_file_paths[@]}"; do
+  version="$(grep -E '^MB_IMAGE_TAG=' "$env_file_path" 2>/dev/null | cut -d= -f2 | tr -d '\r' || true)"
+  dataset="$(grep -E '^DATASET=' "$env_file_path" 2>/dev/null | cut -d= -f2 | tr -d '\r' || true)"
+  [[ -z "$version" || -z "$dataset" ]] && continue  # skip incomplete env files
 
-    label="${version}  [${dataset}]"
+  if is_running "$version" "$dataset"; then
+    running=true
+  else
+    running=false
+  fi
 
-    case "$action" in
-      start)
-        [[ "$running" == "true" ]] && label+="  (already running)"
-        labels+=("$label")
-        combos+=("$version $dataset")
-        ;;
-      stop)
-        [[ "$running" == "true" ]] || continue
-        labels+=("$label")
-        combos+=("$version $dataset")
-        ;;
-      nuke)
-        [[ "$running" == "true" ]] && label+="  (running)"
-        labels+=("$label")
-        combos+=("$version $dataset")
-        ;;
-    esac
-  done
+  label="${version}  [${dataset}]"
+
+  case "$action" in
+    start)
+      [[ "$running" == "true" ]] && label+="  (already running)"
+      labels+=("$label")
+      combos+=("$version $dataset")
+      ;;
+    stop)
+      [[ "$running" == "true" ]] || continue
+      labels+=("$label")
+      combos+=("$version $dataset")
+      ;;
+    nuke)
+      [[ "$running" == "true" ]] && label+="  (running)"
+      labels+=("$label")
+      combos+=("$version $dataset")
+      ;;
+  esac
 done
 
 if [[ ${#labels[@]} -eq 0 ]]; then
