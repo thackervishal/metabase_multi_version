@@ -35,8 +35,8 @@ trap cleanup_on_error ERR
 
 ensure_external_volumes
 compose up -d app-db sample-dwh
-wait_for_service_health app-db 12 2
-wait_for_service_health sample-dwh 12 2
+wait_for_service_health app-db 30 10
+wait_for_service_health sample-dwh 30 10
 
 "$SCRIPT_DIR/seed-sample-dwh.sh" "$VERSION" "$DATASET_KEY"
 
