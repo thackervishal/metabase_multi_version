@@ -5,4 +5,4 @@ snapshots/
 .agent-local/
 .mcp.json
 metabot-debug-logs/
-.00_repro_65741/
+.00_repro_*/

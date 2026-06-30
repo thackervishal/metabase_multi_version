@@ -127,7 +127,7 @@ Each stack has optional feature flags in its version env file (`env/mb_versions/
 ```env
 ENABLE_EMAIL=true    # starts Mailpit — catches all outbound email
 ENABLE_WEBHOOKS=true # starts webhook-tester — receives webhook alerts
-ENABLE_SAML=true     # starts Keycloak — local SAML identity provider
+ENABLE_SAML=true     # starts Keycloak — local identity provider (SAML and OIDC)
 ```
 
 `make new` prompts for email and webhooks when creating a new stack. To enable any flag on an existing stack, edit the env file directly and run `make start` again.
@@ -185,6 +185,32 @@ Then watch it at `http://localhost:9000/s/${SESSION_ID}`.
 - If the webhook-tester container itself restarts (`make services-down` / `make services-up`), past payloads are lost but the session recreates automatically the next time Metabase fires a webhook to that URL.
 
 `MB_AUTOMATION_API_KEY` and `METABASE_PORT` are in `env/common.env` and your stack's version env file respectively. See `scripts/start.sh` for the full working example.
+
+### Keycloak (SAML / OIDC)
+
+When `ENABLE_SAML=true`, a local [Keycloak](http://keycloak:8180) instance starts (admin / admin). It handles both SAML and OIDC flows.
+
+**Hosts file requirement:**
+
+Keycloak advertises all its endpoints (issuer, token endpoint, etc.) using the hostname `keycloak`, not `localhost`. Both the Metabase container (server-to-server token exchange) and your browser (redirect flow) must reach it at that hostname. Add this line to `C:\Windows\System32\drivers\etc\hosts` (requires an elevated editor):
+
+```text
+127.0.0.1 keycloak
+```
+
+Without this, browser-driven OIDC and SAML redirect flows will fail.
+
+**OIDC setup (quick reference):**
+
+| Field | Value |
+| --- | --- |
+| Keycloak admin UI | `http://keycloak:8180` |
+| Issuer URI (in Metabase) | `http://keycloak:8180/realms/<your-realm>` |
+| Valid redirect URI (in Keycloak client) | `http://localhost:<METABASE_PORT>/auth/sso/<key>/callback` |
+
+The **Key** field in Metabase's OIDC form is a short slug you choose (e.g. `keycloak`). It forms the callback URL — use that exact URL in Keycloak's "Valid redirect URIs".
+
+`MB_ENCRYPTION_SECRET_KEY` is required for Metabase to save OIDC settings. It is pre-configured in `env/common.env` and wired into `compose/base.yml` — no action needed for new stacks.
 
 ### Email
 

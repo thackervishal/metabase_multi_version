@@ -123,7 +123,7 @@ if [[ "${ENABLE_EMAIL}" == "true" ]] || [[ "${ENABLE_WEBHOOKS}" == "true" ]] || 
     echo "  Webhooks        http://localhost:${WEBHOOK_PORT:-9000}/s/${WEBHOOK_SESSION_ID}"
   fi
   if [[ "${ENABLE_SAML}" == "true" ]]; then
-    echo "  Keycloak        http://localhost:${KEYCLOAK_PORT:-8180}  admin / admin"
+    echo "  Keycloak        http://keycloak:${KEYCLOAK_PORT:-8180}  admin / admin"
   fi
 fi
 echo "$SEP"

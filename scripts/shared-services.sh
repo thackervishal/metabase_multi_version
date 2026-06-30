@@ -32,7 +32,7 @@ case "${1:?Usage: shared-services.sh <up|down|ensure|ensure-network>}" in
       --profile email --profile webhooks --profile saml up -d
     echo "  Mailpit (email) UI: http://localhost:${MAILPIT_UI_PORT:-8025}"
     echo "  Webhook receiver:   http://localhost:${WEBHOOK_PORT:-9000}"
-    echo "  Keycloak admin:     http://localhost:${KEYCLOAK_PORT:-8180}"
+    echo "  Keycloak admin:     http://keycloak:${KEYCLOAK_PORT:-8180}"
     ;;
   stop)
     echo "Stopping shared services..."
