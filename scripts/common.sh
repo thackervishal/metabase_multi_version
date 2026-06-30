@@ -294,6 +294,7 @@ wait_for_service_health() {
         ;;
     esac
 
+    echo "  Waiting for $service_name to be healthy — attempt $attempt/${max_attempts} (status: $status)..."
     sleep "$sleep_seconds"
   done
 
@@ -304,17 +305,18 @@ wait_for_service_health() {
 wait_for_metabase() {
   require_command curl
 
-  echo "Waiting for Metabase on port ${METABASE_PORT}"
+  local max_attempts=30
+  local sleep_seconds=10
 
-  local attempt=0
-  until curl -fsS "http://127.0.0.1:${METABASE_PORT}/api/health" >/dev/null 2>&1; do
-    attempt=$((attempt + 1))
-    if [[ $attempt -ge 90 ]]; then
-      echo "Metabase did not become healthy in time." >&2
-      return 1
+  for ((attempt = 1; attempt <= max_attempts; attempt++)); do
+    if curl -fsS "http://127.0.0.1:${METABASE_PORT}/api/health" >/dev/null 2>&1; then
+      echo "Metabase is responding."
+      return 0
     fi
-    sleep 2
+    echo "  Waiting for Metabase on port ${METABASE_PORT} — attempt ${attempt}/${max_attempts}..."
+    sleep "$sleep_seconds"
   done
 
-  echo "Metabase is responding."
+  echo "Metabase did not become healthy in time." >&2
+  return 1
 }

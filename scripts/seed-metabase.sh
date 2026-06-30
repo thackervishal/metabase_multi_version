@@ -101,16 +101,6 @@ update_collection() {
   api_request PUT "/api/collection/${collection_id}" "$payload" >/dev/null
 }
 
-card_id_by_name() {
-  local card_name="$1"
-  api_request GET "/api/search?q=${card_name// /%20}" | jq -r --arg name "$card_name" '.data[]? | select(.model == "card" and .name == $name) | .id' | head -n 1
-}
-
-dashboard_id_by_name() {
-  local dashboard_name="$1"
-  api_request GET "/api/search?q=${dashboard_name// /%20}" | jq -r --arg name "$dashboard_name" '.data[]? | select(.model == "dashboard" and .name == $name) | .id' | head -n 1
-}
-
 collection_item_id_by_name() {
   local collection_id="$1"
   local model="$2"
