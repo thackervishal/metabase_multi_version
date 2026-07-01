@@ -2,7 +2,7 @@ SHELL := /usr/bin/env bash
 
 ROOT_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 
-.PHONY: help start stop nuke new remove list services-up services-down done prune
+.PHONY: help start stop nuke new list services-up services-down done prune
 
 help:
 	@echo "Metabase local stack"
@@ -12,7 +12,6 @@ help:
 	@echo "  make nuke         [MB_VERSION=<v> DATASET=<d>]  -- interactive picker, or direct if args supplied"
 	@echo "  make list                                        -- show all configured stacks and their status"
 	@echo "  make new                                         -- create a new version env file, optionally start"
-	@echo "  make remove                                      -- nuke a stack and delete its env file"
 	@echo "  make services-up                                 -- start shared services (Mailpit + webhook tester)"
 	@echo "  make services-down                               -- stop shared services"
 	@echo "  make done                                        -- stop all running stacks and shared services"
@@ -43,9 +42,6 @@ endif
 
 new:
 	@bash "$(ROOT_DIR)/scripts/new-stack.sh"
-
-remove:
-	@bash "$(ROOT_DIR)/scripts/remove-stack.sh"
 
 list:
 	@bash "$(ROOT_DIR)/scripts/list-stacks.sh"

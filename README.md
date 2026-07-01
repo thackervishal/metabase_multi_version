@@ -56,10 +56,9 @@ Once your stack env files are in place, run `make start`, `make stop`, or `make 
 | --- | --- |
 | `make start` | Interactive — pick a stack to start |
 | `make stop` | Interactive — pick a running stack to stop |
-| `make nuke` | Interactive — pick a stack to destroy |
+| `make nuke` | Interactive — pick a stack to destroy (removes containers, volumes, seed markers; prompts to also delete the env file) |
 | `make list` | Show all configured stacks with ports and running status |
 | `make new` | Create a new version env file — drill down major → minor → hotfix or float, suggests ports, optionally starts |
-| `make remove` | Remove a stack entirely — nukes runtime state then deletes the version env file |
 | `make services-up` | Start all shared services (Mailpit, webhook tester, Keycloak) manually |
 | `make services-down` | Stop shared services |
 | `make prune` | Remove all unused Docker images (tagged and untagged) and orphaned volumes |
@@ -96,6 +95,25 @@ Each `make start` automatically creates a named Firefox container for the stack 
 - **Live-session conflict (rare).** If you create or edit containers inside a running Firefox session *and* a new stack is started at the same time, Firefox may overwrite `containers.json` with its in-memory state on exit, losing the entry that was just written. If a container goes missing, re-run `make start` to recreate it (it's a no-op if the stack is already up).
 - **No Firefox? No problem.** If Firefox is not installed the feature is silently skipped and a tip is printed. Everything else works normally.
 - **No extension? Still works.** Containers are a built-in Firefox feature; the extension just adds UI shortcuts. Without it you can still open tabs in a specific container via the right-click tab menu.
+
+---
+
+## Claude Code MCP Integration
+
+Each `make start` automatically registers the running Metabase stack as an MCP server in Claude Code, scoped to this project (written to `.mcp.json` in the repo root, which is gitignored). This gives Claude Code live access to Metabase tools — querying data, inspecting databases, running cards, etc. — directly from the chat.
+
+**The order matters:**
+
+1. Run `make start` in the terminal and wait for the "Stack ready" summary.
+2. Check the summary line — if it says `MCP server  <name>  (start new Claude session)`, registration succeeded.
+3. Open Claude Code and **start a new conversation**. Tools are not available in sessions that were already open when `make start` ran.
+
+**If tools don't appear in the new session:**
+
+- **Wait a moment and retry.** The Metabase MCP endpoint (`/api/metabase-mcp`) can lag slightly behind the health check. Close the conversation, wait 10–15 seconds, open a new one.
+- **Check the startup summary.** If it said `MCP server  registration failed`, the `claude` CLI was not found on PATH in the terminal where you ran `make start`. Registration is silently skipped in that case — run `make start` again from a terminal where `claude` is available.
+- **Multiple stacks** each get their own named MCP entry (e.g. `mb_1_62_3_x_sample_mysql8`), so you can have several registered simultaneously. Each new Claude session sees all of them.
+- **`make nuke`** removes the MCP entry for that stack automatically.
 
 ---
 
@@ -286,7 +304,6 @@ Unless overridden in `env/common.env`:
 | `scripts/list-stacks.sh` | Show all configured stacks with ports and running status |
 | `scripts/pick.sh` | Interactive picker: reads env files, detects running stacks, hands off to start/stop/nuke |
 | `scripts/new-stack.sh` | Create a new version env file: queries Docker Hub, suggests ports, optionally starts |
-| `scripts/remove-stack.sh` | Remove a stack: nukes runtime state for all dataset combos, deletes the version env file |
 | `scripts/start.sh` | Pull image if newer, create volumes, start services, seed |
 | `scripts/stop.sh` | Stop containers, leave volumes intact |
 | `scripts/done.sh` | Stop all running stacks and shared services (end-of-day shortcut) |
