@@ -288,6 +288,11 @@ read -rp "Enable SAML SSO (Keycloak)? [y/N]: " enable_saml </dev/tty
 enable_saml="${enable_saml:-N}"
 [[ "$enable_saml" =~ ^[Yy]$ ]] && enable_saml_val=true || enable_saml_val=false
 
+# ── Optional friendly name ────────────────────────────────────────────────────
+
+echo
+read -rp "Give this stack a friendly name (optional, e.g. 'testing keycloak'): " stack_label </dev/tty
+
 # ── Write env file ────────────────────────────────────────────────────────────
 
 cat > "$env_file" <<EOF
@@ -300,6 +305,10 @@ ENABLE_EMAIL=${enable_email_val}
 ENABLE_WEBHOOKS=${enable_webhooks_val}
 ENABLE_SAML=${enable_saml_val}
 EOF
+
+if [[ -n "$stack_label" ]]; then
+  echo "STACK_LABEL=${stack_label}" >> "$env_file"
+fi
 
 echo
 echo "Created env/mb_versions/${image_tag}_${selected_dataset}.env"

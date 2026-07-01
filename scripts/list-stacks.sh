@@ -43,13 +43,14 @@ is_running() {
 echo
 echo "Configured stacks:"
 echo
-printf "  %-22s  %-20s  %-6s  %s\n" "STACK" "DATASET" "PORT" "STATUS"
-printf "  %-22s  %-20s  %-6s  %s\n" "----------------------" "--------------------" "------" "------"
+printf "  %-22s  %-20s  %-6s  %-24s  %s\n" "STACK" "DATASET" "PORT" "LABEL" "STATUS"
+printf "  %-22s  %-20s  %-6s  %-24s  %s\n" "----------------------" "--------------------" "------" "------------------------" "------"
 
 for env_file_path in "${env_file_paths[@]}"; do
   version="$(grep -E '^MB_IMAGE_TAG=' "$env_file_path" 2>/dev/null | cut -d= -f2 | tr -d '\r' || true)"
   dataset="$(grep -E '^DATASET=' "$env_file_path" 2>/dev/null | cut -d= -f2 | tr -d '\r' || true)"
   port="$(grep -E '^METABASE_PORT=' "$env_file_path" 2>/dev/null | cut -d= -f2 || echo '?')"
+  label="$(grep -E '^STACK_LABEL=' "$env_file_path" 2>/dev/null | cut -d= -f2- | tr -d '\r' || true)"
 
   if [[ -n "$version" && -n "$dataset" ]] && is_running "$version" "$dataset"; then
     status="running  →  http://localhost:${port}"
@@ -57,7 +58,7 @@ for env_file_path in "${env_file_paths[@]}"; do
     status="stopped"
   fi
 
-  printf "  %-22s  %-20s  %-6s  %s\n" "${version:-?}" "${dataset:-?}" "$port" "$status"
+  printf "  %-22s  %-20s  %-6s  %-24s  %s\n" "${version:-?}" "${dataset:-?}" "$port" "${label:--}" "$status"
 done
 
 echo
