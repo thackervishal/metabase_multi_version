@@ -1,0 +1,7 @@
+# Agent reference: webhook-tester integration
+
+Read this only when working on `ENABLE_WEBHOOKS`, webhook channels, or the webhook-related block in `scripts/start.sh`. Not needed for routine repo work — `.github/copilot-instructions.md` covers everything needed day-to-day.
+
+- `MB_HTTP_CHANNEL_HOST_STRATEGY` is a Metabase env var controlling outbound HTTP channel SSRF protection. `external-only` (default) blocks all private/RFC-1918 IPs and known metadata hostnames including `host.docker.internal`. `allow-private` permits Docker network IPs but still blocks loopback. `allow-all` removes all restrictions. Set via `compose/base.yml`; driven by `ENABLE_WEBHOOKS` in `scripts/common.sh`.
+- The Metabase frontend has a Yup validation bug: the webhook URL field rejects bare hostnames (no TLD) such as `webhook-tester:8080`, even though the backend accepts them. Workaround: webhook channels are auto-created via `POST /api/channel` using `MB_AUTOMATION_API_KEY` in `scripts/start.sh`, bypassing the frontend entirely.
+- Webhook session IDs are deterministic UUIDs derived from `COMPOSE_PROJECT_NAME` (md5, UUID-formatted) — computed in `load_stack_env` as `WEBHOOK_SESSION_ID`. Same stack always gets the same session path, stable across restarts. The webhook-tester container runs with `AUTO_CREATE_SESSIONS=true` so it accepts any UUID path without pre-registration. Metabase POSTs to `http://webhook-tester:8080/<WEBHOOK_SESSION_ID>`; the user watches at `http://localhost:9000/<WEBHOOK_SESSION_ID>` (printed by `start.sh`).

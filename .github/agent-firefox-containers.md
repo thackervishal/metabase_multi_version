@@ -1,0 +1,6 @@
+# Agent reference: Firefox Multi-Account Container integration
+
+Read this only when working on `scripts/firefox-container.sh`, or debugging why a stack's Firefox container isn't appearing/disappearing correctly. Not needed for routine repo work — `.github/copilot-instructions.md` covers everything needed day-to-day.
+
+- `scripts/firefox-container.sh` creates a Firefox Multi-Account Container entry for a stack by writing directly to the default profile's `containers.json`. Called from `scripts/start.sh` after the stack is ready. Exit codes: 0 = container already existed, 1 = Firefox not installed or profile not found (silent skip), 2 = container just created (user must restart Firefox). Container name format: `mb-<MB_VERSION>-<DATASET>-<METABASE_PORT>-admin` (e.g. `mb-1.61.2.x-sample-pg15-3310-admin`). Does not stop or prompt Firefox — writes directly; Firefox overwrites the file on exit if containers were edited in a live session, so running `make start` again recreates any lost entry.
+- `firefox-container.sh` supports a `--remove` flag: removes the named container entry from Firefox's `containers.json`. Called by `nuke.sh` (when user confirms env deletion) and `remove-stack.sh` (for each dataset combo during stack removal).

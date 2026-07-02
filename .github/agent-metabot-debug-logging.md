@@ -1,0 +1,5 @@
+# Agent reference: Metabot LLM debug logging
+
+Read this only when working with `METABOT_DEBUG_LLM`, or debugging LLM request/response capture. Not needed for routine repo work — `.github/copilot-instructions.md` covers everything needed day-to-day.
+
+- `METABOT_DEBUG_LLM=true` in a version env file (`env/mb_versions/*.env`) enables `MB_METABOT_DEBUG_LLM_REQUESTS=true` in the container, which writes one JSON file per LLM API call. Files land at `logs/ai/requests/` **relative to the JVM working directory** (`/`), so the container path is `/logs/ai/requests/` — not `/app/logs/ai/requests/`. The bind mount in `compose/base.yml` uses `source: ../metabot-debug-logs/${COMPOSE_PROJECT_NAME}` (per-stack subfolder) so logs from concurrent stacks never intermingle. `start.sh` creates the host directory and runs `chmod o+w` on it (required on Linux because the Metabase JVM runs as uid 2000 while the host dir is owned by the script user; harmless no-op on Windows/Docker Desktop where NTFS does not enforce Unix UID permissions).
