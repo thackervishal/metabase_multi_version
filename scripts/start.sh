@@ -98,29 +98,12 @@ fi
 
 CLI_URL="http://127.0.0.1:${METABASE_PORT}"
 
-# Prefer a globally installed `mb` (fast); fall back to npx (slower, but works
-# without a global install) for devs who haven't run `npm install -g @metabase/cli`.
-if command -v mb >/dev/null 2>&1; then
-  MB_CMD=(mb)
-elif command -v npx >/dev/null 2>&1; then
-  MB_CMD=(npx --yes @metabase/cli@latest)
-else
-  MB_CMD=()
-fi
-
-# Profile is keyed by COMPOSE_PROJECT_NAME (same key MCP registration uses above)
-# so running multiple stacks doesn't overwrite each other's saved CLI credentials.
+# seed-metabase.sh already called ensure_mb_cli (resolves MB_CMD and logs the
+# profile in, keyed by COMPOSE_PROJECT_NAME — same key MCP registration uses
+# above) to drive collection/card/dashboard creation via the CLI. Re-run it
+# here so the summary below reflects real status even on a skipped-seed run.
 cli_result=0
-if [[ ${#MB_CMD[@]} -gt 0 ]]; then
-  if ! MB_API_KEY="$MB_AUTOMATION_API_KEY" "${MB_CMD[@]}" auth login \
-      --profile "$COMPOSE_PROJECT_NAME" \
-      --url "$CLI_URL" \
-      >/dev/null 2>&1; then
-    cli_result=1
-  fi
-else
-  cli_result=2
-fi
+ensure_mb_cli || cli_result=$?
 
 SEP="------------------------------------------------------------"
 echo

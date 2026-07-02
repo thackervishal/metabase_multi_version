@@ -17,6 +17,8 @@ mkdir -p "$STACK_STATE_DIR"
 
 SEED_CONTENT_VERSION="4"
 
+# Raw API calls only — kept for the handful of operations the mb CLI has no
+# verb for: users, permission groups/membership, and cache policies.
 api_request() {
   local method="$1"
   local endpoint="$2"
@@ -35,17 +37,17 @@ api_request() {
   fi
 }
 
-echo "Waiting for config-driven API key to become active"
-attempt=0
-# The config file creates the API key during Metabase startup; wait until it can authenticate requests.
-until api_request GET "/api/user/current" >/dev/null 2>&1; do
-  attempt=$((attempt + 1))
-  if [[ $attempt -ge 30 ]]; then
-    echo "Metabase API key did not become active in time." >&2
-    exit 1
+echo "Waiting for config-driven API key to become active and starting the mb CLI"
+mb_status=0
+ensure_mb_cli || mb_status=$?
+if [[ $mb_status -ne 0 ]]; then
+  if [[ $mb_status -eq 2 ]]; then
+    echo "Neither 'mb' nor 'npx' found on PATH. Install the Metabase CLI (npm install -g @metabase/cli) to seed content." >&2
+  else
+    echo "Metabase CLI could not authenticate against ${COMPOSE_PROJECT_NAME}." >&2
   fi
-  sleep 2
-done
+  exit 1
+fi
 
 users_json="$(api_request GET "/api/user")"
 
@@ -88,9 +90,10 @@ ensure_membership() {
 
 collection_id_by_name() {
   local collection_name="$1"
-  api_request GET "/api/search?q=${collection_name// /%20}" | jq -r --arg name "$collection_name" '.data[]? | select(.model == "collection" and .name == $name) | .id' | head -n 1
+  mb_cli collection list --json | jq -r --arg name "$collection_name" '.data[]? | select(.name == $name) | .id' | head -n 1
 }
 
+# No `collection update` verb in the mb CLI — stays a raw API call.
 update_collection() {
   local collection_id="$1"
   local collection_name="$2"
@@ -106,7 +109,7 @@ collection_item_id_by_name() {
   local model="$2"
   local item_name="$3"
 
-  api_request GET "/api/collection/${collection_id}/items" | jq -r --arg model "$model" --arg name "$item_name" '.data[]? | select(.model == $model and .name == $name) | .id' | head -n 1
+  mb_cli collection items "$collection_id" --models "$model" --json | jq -r --arg name "$item_name" '.data[]? | select(.name == $name) | .id' | head -n 1
 }
 
 wait_for_database_id_by_name() {
@@ -115,7 +118,7 @@ wait_for_database_id_by_name() {
   local found_id
 
   while :; do
-    found_id="$(api_request GET "/api/database" | jq -r --arg name "$database_name" '.data[]? | select(.name == $name) | .id' | head -n 1)"
+    found_id="$(mb_cli db list --json | jq -r --arg name "$database_name" '.data[]? | select(.name == $name) | .id' | head -n 1)"
     if [[ -n "$found_id" ]]; then
       echo "$found_id"
       return 0
@@ -131,6 +134,7 @@ wait_for_database_id_by_name() {
   done
 }
 
+# No `cache` verb in the mb CLI — stays a raw API call.
 ensure_cache_policy() {
   local model="$1"
   local model_id="$2"
@@ -187,28 +191,53 @@ create_card_if_missing() {
     --argjson dataset_query "$dataset_query" \
     '{name: $name, description: $description, display: $display, collection_id: $collection_id, dataset_query: $dataset_query, visualization_settings: {}}')"
 
-  api_request POST "/api/card" "$payload" | jq -r '.id'
+  mb_cli card create --body "$payload" --json | jq -r '.id'
 }
 
-refresh_database_metadata() {
-  database_metadata_json="$(api_request GET "/api/database/${database_id}/metadata")"
+# Table list only (no fields) scoped to our one known database id — orders
+# of magnitude smaller than a whole-database metadata dump. --full is
+# required here: in compact mode `db get` drops the `tables` array entirely
+# regardless of --include (a CLI quirk — confirmed against a live instance).
+db_tables_json=""
+refresh_db_tables() {
+  db_tables_json="$(mb_cli db get "$database_id" --include tables --full --json)"
 }
 
 table_id_by_name() {
   local table_name="$1"
-  echo "$database_metadata_json" | jq -r --arg table_name "$table_name" '.tables[]? | select((.name | ascii_downcase) == ($table_name | ascii_downcase)) | .id' | head -n 1
+  echo "$db_tables_json" | jq -r --arg table_name "$table_name" '.tables[]? | select((.name | ascii_downcase) == ($table_name | ascii_downcase)) | .id' | head -n 1
+}
+
+# Cache field lookups per table id (+ projection) so a table already fetched
+# earlier in the same attempt isn't re-requested.
+declare -A table_fields_cache
+
+table_fields_json() {
+  local table_id="$1"
+  local projection="${2:-compact}"
+  local cache_key="${table_id}:${projection}"
+  if [[ -z "${table_fields_cache[$cache_key]:-}" ]]; then
+    if [[ "$projection" == "full" ]]; then
+      table_fields_cache[$cache_key]="$(mb_cli table get "$table_id" --include fields --full --json)"
+    else
+      table_fields_cache[$cache_key]="$(mb_cli table get "$table_id" --include fields --json)"
+    fi
+  fi
+  echo "${table_fields_cache[$cache_key]}"
 }
 
 field_id_by_name() {
-  local table_name="$1"
+  local table_id="$1"
   local field_name="$2"
-  echo "$database_metadata_json" | jq -r --arg table_name "$table_name" --arg field_name "$field_name" '.tables[]? | select((.name | ascii_downcase) == ($table_name | ascii_downcase)) | .fields[]? | select((.name | ascii_downcase) == ($field_name | ascii_downcase)) | .id' | head -n 1
+  table_fields_json "$table_id" | jq -r --arg field_name "$field_name" '.fields[]? | select((.name | ascii_downcase) == ($field_name | ascii_downcase)) | .id' | head -n 1
 }
 
+# nfc_path (needed to locate the JSON-unfolded column) only appears in the
+# --full projection — scoped to this one table rather than the whole database.
 field_id_by_nfc_path() {
-  local table_name="$1"
+  local table_id="$1"
   local nfc_path_json="$2"
-  echo "$database_metadata_json" | jq -r --arg table_name "$table_name" --argjson nfc_path "$nfc_path_json" '.tables[]? | select((.name | ascii_downcase) == ($table_name | ascii_downcase)) | .fields[]? | select(.nfc_path == $nfc_path) | .id' | head -n 1
+  table_fields_json "$table_id" "full" | jq -r --argjson nfc_path "$nfc_path_json" '.fields[]? | select(.nfc_path == $nfc_path) | .id' | head -n 1
 }
 
 add_card_to_dashboard() {
@@ -221,7 +250,7 @@ add_card_to_dashboard() {
   local dashboard_json
   local payload
 
-  dashboard_json="$(api_request GET "/api/dashboard/${dashboard_id}")"
+  dashboard_json="$(mb_cli dashboard get "$dashboard_id" --json)"
   if echo "$dashboard_json" | jq -e --argjson card_id "$card_id" '.dashcards[]? | select(.card_id == $card_id)' >/dev/null; then
     return
   fi
@@ -232,9 +261,9 @@ add_card_to_dashboard() {
     --argjson col "$col" \
     --argjson size_x "$size_x" \
     --argjson size_y "$size_y" \
-    '.dashcards = ((.dashcards // []) + [{id: -1, card_id: $card_id, row: $row, col: $col, size_x: $size_x, size_y: $size_y, parameter_mappings: [], visualization_settings: {}}])')"
+    '{dashcards: ((.dashcards // []) + [{id: -1, card_id: $card_id, row: $row, col: $col, size_x: $size_x, size_y: $size_y, parameter_mappings: [], visualization_settings: {}}])}')"
 
-  api_request PUT "/api/dashboard/${dashboard_id}" "$payload" >/dev/null
+  mb_cli dashboard update "$dashboard_id" --body "$payload" >/dev/null
 }
 
 analytics_group_id="$(ensure_group "Analytics Team")"
@@ -265,7 +294,7 @@ fi
 
 # Keep the seed idempotent: create the collection and starter card only if they are missing.
 if [[ -z "$starter_collection_id" ]]; then
-  starter_collection_id="$(api_request POST "/api/collection" "{\"name\":\"${starter_collection_name}\",\"description\":\"${starter_collection_description}\"}" | jq -r '.id')"
+  starter_collection_id="$(mb_cli collection create --body "$(jq -nc --arg name "$starter_collection_name" --arg description "$starter_collection_description" '{name: $name, description: $description}')" --json | jq -r '.id')"
 fi
 
 question_name="Sample DB Connectivity Check"
@@ -281,14 +310,28 @@ if [[ -n "$database_id" ]]; then
 
     metadata_attempt=0
     while :; do
-      refresh_database_metadata
+      refresh_db_tables
+      table_fields_cache=()
+
       orders_table_id="$(table_id_by_name "orders")"
       people_table_id="$(table_id_by_name "people")"
       products_table_id="$(table_id_by_name "products")"
-      orders_created_at_field_id="$(field_id_by_name "orders" "created_at")"
-      people_state_field_id="$(field_id_by_name "people" "state")"
-      products_category_field_id="$(field_id_by_name "products" "category")"
-      orders_total_field_id="$(field_id_by_name "orders" "total")"
+
+      orders_created_at_field_id=""
+      orders_total_field_id=""
+      people_state_field_id=""
+      products_category_field_id=""
+
+      if [[ -n "$orders_table_id" ]]; then
+        orders_created_at_field_id="$(field_id_by_name "$orders_table_id" "created_at")"
+        orders_total_field_id="$(field_id_by_name "$orders_table_id" "total")"
+      fi
+      if [[ -n "$people_table_id" ]]; then
+        people_state_field_id="$(field_id_by_name "$people_table_id" "state")"
+      fi
+      if [[ -n "$products_table_id" ]]; then
+        products_category_field_id="$(field_id_by_name "$products_table_id" "category")"
+      fi
 
       if [[ -n "$orders_table_id" && -n "$people_table_id" && -n "$products_table_id" && -n "$orders_created_at_field_id" && -n "$people_state_field_id" && -n "$products_category_field_id" && -n "$orders_total_field_id" ]]; then
         break
@@ -304,21 +347,29 @@ if [[ -n "$database_id" ]]; then
     done
 
     if [[ -n "$orders_table_id" && -n "$people_table_id" && -n "$products_table_id" && -n "$orders_created_at_field_id" && -n "$people_state_field_id" && -n "$products_category_field_id" && -n "$orders_total_field_id" ]]; then
+      # Aggregations referenced by an order-by clause need an explicit
+      # lib/uuid (MBQL 5) — mint with `mb uuid`, never hand-authored.
+      mapfile -t agg_uuids < <("${MB_CMD[@]}" uuid --count 2 --json | jq -r '.[]')
+      people_by_state_agg_uuid="${agg_uuids[0]}"
+      products_by_category_agg_uuid="${agg_uuids[1]}"
+
       orders_by_month_query="$(jq -nc \
         --argjson database "$database_id" \
         --argjson source_table "$orders_table_id" \
         --argjson created_at_field "$orders_created_at_field_id" \
-        '{type: "query", database: $database, query: {"source-table": $source_table, aggregation: [["count"]], breakout: [["field", $created_at_field, {"temporal-unit": "month"}]], "order-by": [["asc", ["field", $created_at_field, {"temporal-unit": "month"}]]]}}')"
+        '{"lib/type": "mbql/query", database: $database, stages: [{"lib/type": "mbql.stage/mbql", "source-table": $source_table, aggregation: [["count", {}]], breakout: [["field", {"temporal-unit": "month"}, $created_at_field]], "order-by": [["asc", {}, ["field", {"temporal-unit": "month"}, $created_at_field]]]}]}')"
       people_by_state_query="$(jq -nc \
         --argjson database "$database_id" \
         --argjson source_table "$people_table_id" \
         --argjson state_field "$people_state_field_id" \
-        '{type: "query", database: $database, query: {"source-table": $source_table, aggregation: [["count"]], breakout: [["field", $state_field, null]], "order-by": [["desc", ["aggregation", 0]]], limit: 10}}')"
+        --arg agg_uuid "$people_by_state_agg_uuid" \
+        '{"lib/type": "mbql/query", database: $database, stages: [{"lib/type": "mbql.stage/mbql", "source-table": $source_table, aggregation: [["count", {"lib/uuid": $agg_uuid}]], breakout: [["field", {}, $state_field]], "order-by": [["desc", {}, ["aggregation", {}, $agg_uuid]]], limit: 10}]}')"
       products_by_category_query="$(jq -nc \
         --argjson database "$database_id" \
         --argjson source_table "$products_table_id" \
         --argjson category_field "$products_category_field_id" \
-        '{type: "query", database: $database, query: {"source-table": $source_table, aggregation: [["count"]], breakout: [["field", $category_field, null]], "order-by": [["desc", ["aggregation", 0]]], limit: 10}}')"
+        --arg agg_uuid "$products_by_category_agg_uuid" \
+        '{"lib/type": "mbql/query", database: $database, stages: [{"lib/type": "mbql.stage/mbql", "source-table": $source_table, aggregation: [["count", {"lib/uuid": $agg_uuid}]], breakout: [["field", {}, $category_field]], "order-by": [["desc", {}, ["aggregation", {}, $agg_uuid]]], limit: 10}]}')"
       monthly_revenue_query="$(jq -nc --argjson database "$database_id" \
         '{type: "native", native: {query: "select DATE_FORMAT(created_at, '"'"'%Y-%m-01'"'"') as month,\n       count(*) as order_count,\n       round(sum(total), 2) as revenue\nfrom orders\ngroup by 1\norder by 1", "template-tags": {}}, database: $database}')"
       category_revenue_query="$(jq -nc --argjson database "$database_id" \
@@ -338,7 +389,7 @@ if [[ -n "$database_id" ]]; then
       dashboard_id="$(collection_item_id_by_name "$starter_collection_id" "dashboard" "$dashboard_name")"
       if [[ -z "$dashboard_id" ]]; then
         dashboard_payload="$(jq -nc --arg name "$dashboard_name" --arg description "Seeded dashboard for ${SAMPLE_DB_DISPLAY_NAME}." --argjson collection_id "$starter_collection_id" '{name: $name, description: $description, collection_id: $collection_id, parameters: []}')"
-        dashboard_id="$(api_request POST "/api/dashboard" "$dashboard_payload" | jq -r '.id')"
+        dashboard_id="$(mb_cli dashboard create --body "$dashboard_payload" --json | jq -r '.id')"
       fi
 
       add_card_to_dashboard "$dashboard_id" "$orders_by_month_card_id"      0  0 12 6
@@ -358,18 +409,37 @@ if [[ -n "$database_id" ]]; then
 
     metadata_attempt=0
     while :; do
-      refresh_database_metadata
+      refresh_db_tables
+      table_fields_cache=()
+
       orders_table_id="$(table_id_by_name "orders")"
       people_table_id="$(table_id_by_name "people")"
       person_profiles_json_table_id="$(table_id_by_name "person_profiles_json")"
       products_table_id="$(table_id_by_name "products")"
-      orders_created_at_field_id="$(field_id_by_name "orders" "created_at")"
-      people_state_field_id="$(field_id_by_name "people" "state")"
-      people_id_field_id="$(field_id_by_name "people" "id")"
-      person_profiles_person_id_field_id="$(field_id_by_name "person_profiles_json" "person_id")"
-      person_profiles_dark_mode_field_id="$(field_id_by_nfc_path "person_profiles_json" '["profile_json","preferences","dark_mode"]')"
-      products_category_field_id="$(field_id_by_name "products" "category")"
-      orders_total_field_id="$(field_id_by_name "orders" "total")"
+
+      orders_created_at_field_id=""
+      orders_total_field_id=""
+      people_state_field_id=""
+      people_id_field_id=""
+      person_profiles_person_id_field_id=""
+      person_profiles_dark_mode_field_id=""
+      products_category_field_id=""
+
+      if [[ -n "$orders_table_id" ]]; then
+        orders_created_at_field_id="$(field_id_by_name "$orders_table_id" "created_at")"
+        orders_total_field_id="$(field_id_by_name "$orders_table_id" "total")"
+      fi
+      if [[ -n "$people_table_id" ]]; then
+        people_state_field_id="$(field_id_by_name "$people_table_id" "state")"
+        people_id_field_id="$(field_id_by_name "$people_table_id" "id")"
+      fi
+      if [[ -n "$person_profiles_json_table_id" ]]; then
+        person_profiles_person_id_field_id="$(field_id_by_name "$person_profiles_json_table_id" "person_id")"
+        person_profiles_dark_mode_field_id="$(field_id_by_nfc_path "$person_profiles_json_table_id" '["profile_json","preferences","dark_mode"]')"
+      fi
+      if [[ -n "$products_table_id" ]]; then
+        products_category_field_id="$(field_id_by_name "$products_table_id" "category")"
+      fi
 
       if [[ -n "$orders_table_id" && -n "$people_table_id" && -n "$person_profiles_json_table_id" && -n "$products_table_id" && -n "$orders_created_at_field_id" && -n "$people_state_field_id" && -n "$people_id_field_id" && -n "$person_profiles_person_id_field_id" && -n "$person_profiles_dark_mode_field_id" && -n "$products_category_field_id" && -n "$orders_total_field_id" ]]; then
         break
@@ -385,21 +455,29 @@ if [[ -n "$database_id" ]]; then
     done
 
     if [[ -n "$orders_table_id" && -n "$people_table_id" && -n "$products_table_id" && -n "$orders_created_at_field_id" && -n "$people_state_field_id" && -n "$products_category_field_id" && -n "$orders_total_field_id" ]]; then
+      # Aggregations referenced by an order-by clause need an explicit
+      # lib/uuid (MBQL 5) — mint with `mb uuid`, never hand-authored.
+      mapfile -t agg_uuids < <("${MB_CMD[@]}" uuid --count 2 --json | jq -r '.[]')
+      people_by_state_agg_uuid="${agg_uuids[0]}"
+      products_by_category_agg_uuid="${agg_uuids[1]}"
+
       orders_by_month_query="$(jq -nc \
         --argjson database "$database_id" \
         --argjson source_table "$orders_table_id" \
         --argjson created_at_field "$orders_created_at_field_id" \
-        '{type: "query", database: $database, query: {"source-table": $source_table, aggregation: [["count"]], breakout: [["field", $created_at_field, {"temporal-unit": "month"}]], "order-by": [["asc", ["field", $created_at_field, {"temporal-unit": "month"}]]]}}')"
+        '{"lib/type": "mbql/query", database: $database, stages: [{"lib/type": "mbql.stage/mbql", "source-table": $source_table, aggregation: [["count", {}]], breakout: [["field", {"temporal-unit": "month"}, $created_at_field]], "order-by": [["asc", {}, ["field", {"temporal-unit": "month"}, $created_at_field]]]}]}')"
       people_by_state_query="$(jq -nc \
         --argjson database "$database_id" \
         --argjson source_table "$people_table_id" \
         --argjson state_field "$people_state_field_id" \
-        '{type: "query", database: $database, query: {"source-table": $source_table, aggregation: [["count"]], breakout: [["field", $state_field, null]], "order-by": [["desc", ["aggregation", 0]]], limit: 10}}')"
+        --arg agg_uuid "$people_by_state_agg_uuid" \
+        '{"lib/type": "mbql/query", database: $database, stages: [{"lib/type": "mbql.stage/mbql", "source-table": $source_table, aggregation: [["count", {"lib/uuid": $agg_uuid}]], breakout: [["field", {}, $state_field]], "order-by": [["desc", {}, ["aggregation", {}, $agg_uuid]]], limit: 10}]}')"
       products_by_category_query="$(jq -nc \
         --argjson database "$database_id" \
         --argjson source_table "$products_table_id" \
         --argjson category_field "$products_category_field_id" \
-        '{type: "query", database: $database, query: {"source-table": $source_table, aggregation: [["count"]], breakout: [["field", $category_field, null]], "order-by": [["desc", ["aggregation", 0]]], limit: 10}}')"
+        --arg agg_uuid "$products_by_category_agg_uuid" \
+        '{"lib/type": "mbql/query", database: $database, stages: [{"lib/type": "mbql.stage/mbql", "source-table": $source_table, aggregation: [["count", {"lib/uuid": $agg_uuid}]], breakout: [["field", {}, $category_field]], "order-by": [["desc", {}, ["aggregation", {}, $agg_uuid]]], limit: 10}]}')"
       monthly_revenue_query="$(jq -nc --argjson database "$database_id" '{type: "native", native: {query: "select date_trunc('"'"'month'"'"', created_at)::date as month, count(*) as order_count, round(sum(total)::numeric, 2) as revenue\nfrom orders\ngroup by 1\norder by 1;", "template-tags": {}}, database: $database}')"
       category_revenue_query="$(jq -nc --argjson database "$database_id" '{type: "native", native: {query: "select p.category, count(*) as orders, round(sum(o.total)::numeric, 2) as revenue\nfrom orders o\njoin products p on p.id = o.product_id\ngroup by 1\norder by revenue desc\nlimit 10;", "template-tags": {}}, database: $database}')"
       state_field_filter_query="$(jq -nc \
@@ -413,7 +491,7 @@ if [[ -n "$database_id" ]]; then
         --argjson people_id_field "$people_id_field_id" \
         --argjson person_profiles_person_id_field "$person_profiles_person_id_field_id" \
         --argjson person_profiles_dark_mode_field "$person_profiles_dark_mode_field_id" \
-        '{type: "query", database: $database, query: {"source-table": $people_table, joins: [{strategy: "left-join", alias: "Person Profiles Json", "source-table": $person_profiles_json_table, fields: "none", condition: ["=", ["field", $people_id_field, null], ["field", $person_profiles_person_id_field, {"join-alias": "Person Profiles Json"}]]}], aggregation: [["count"]], breakout: [["field", $person_profiles_dark_mode_field, {"join-alias": "Person Profiles Json"}]]}}')"
+        '{"lib/type": "mbql/query", database: $database, stages: [{"lib/type": "mbql.stage/mbql", "source-table": $people_table, joins: [{alias: "Person Profiles Json", strategy: "left-join", stages: [{"lib/type": "mbql.stage/mbql", "source-table": $person_profiles_json_table}], conditions: [["=", {}, ["field", {}, $people_id_field], ["field", {"join-alias": "Person Profiles Json"}, $person_profiles_person_id_field]]], fields: "none"}], aggregation: [["count", {}]], breakout: [["field", {"join-alias": "Person Profiles Json"}, $person_profiles_dark_mode_field]]}]}')"
 
       orders_by_month_card_id="$(create_card_if_missing "Orders by Month" "line" "GUI question showing monthly order volume in ${SAMPLE_DB_DISPLAY_NAME}." "$orders_by_month_query")"
       people_by_state_card_id="$(create_card_if_missing "Customers by State" "bar" "GUI question showing where customers are concentrated." "$people_by_state_query")"
@@ -427,7 +505,7 @@ if [[ -n "$database_id" ]]; then
       dashboard_id="$(collection_item_id_by_name "$starter_collection_id" "dashboard" "$dashboard_name")"
       if [[ -z "$dashboard_id" ]]; then
         dashboard_payload="$(jq -nc --arg name "$dashboard_name" --arg description "Seeded dashboard for ${SAMPLE_DB_DISPLAY_NAME}." --argjson collection_id "$starter_collection_id" '{name: $name, description: $description, collection_id: $collection_id, parameters: []}')"
-        dashboard_id="$(api_request POST "/api/dashboard" "$dashboard_payload" | jq -r '.id')"
+        dashboard_id="$(mb_cli dashboard create --body "$dashboard_payload" --json | jq -r '.id')"
       fi
 
       add_card_to_dashboard "$dashboard_id" "$orders_by_month_card_id" 0 0 12 6

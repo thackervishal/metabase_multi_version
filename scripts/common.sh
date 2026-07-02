@@ -63,6 +63,55 @@ resolve_claude_bin() {
   return 1
 }
 
+# Resolves the mb CLI invocation into the global MB_CMD array: a global
+# install runs directly (fast); npx works without any global install
+# (slower, needs network). Empty array when neither is available.
+resolve_mb_cmd() {
+  if command -v mb >/dev/null 2>&1; then
+    MB_CMD=(mb)
+  elif command -v npx >/dev/null 2>&1; then
+    MB_CMD=(npx --yes @metabase/cli@latest)
+  else
+    MB_CMD=()
+  fi
+}
+
+# Waits for the config-driven automation API key to become active, resolves
+# MB_CMD, and logs the mb CLI into a profile keyed by COMPOSE_PROJECT_NAME
+# (the same key MCP registration uses, so concurrent stacks stay isolated).
+# Returns 0 on success, 1 if the key never activated or login failed, 2 if
+# neither `mb` nor `npx` is available.
+ensure_mb_cli() {
+  require_command curl
+
+  local attempt=0
+  until curl -fsS "http://127.0.0.1:${METABASE_PORT}/api/user/current" \
+      -H "x-api-key: ${MB_AUTOMATION_API_KEY}" >/dev/null 2>&1; do
+    attempt=$((attempt + 1))
+    if [[ $attempt -ge 30 ]]; then
+      echo "Metabase API key did not become active in time." >&2
+      return 1
+    fi
+    sleep 2
+  done
+
+  resolve_mb_cmd
+  if [[ ${#MB_CMD[@]} -eq 0 ]]; then
+    return 2
+  fi
+
+  MB_API_KEY="$MB_AUTOMATION_API_KEY" "${MB_CMD[@]}" auth login \
+    --profile "$COMPOSE_PROJECT_NAME" \
+    --url "http://127.0.0.1:${METABASE_PORT}" \
+    >/dev/null 2>&1 || return 1
+}
+
+# Runs an mb CLI command against this stack's profile. Requires a prior
+# successful ensure_mb_cli call in this shell (populates MB_CMD).
+mb_cli() {
+  "${MB_CMD[@]}" "$@" --profile "$COMPOSE_PROJECT_NAME"
+}
+
 normalize_shell_path() {
   local raw_path="$1"
 
