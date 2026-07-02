@@ -144,34 +144,6 @@ while true; do
   esac
 done
 
-# ── Select dataset (before version pin, so env file name is deterministic) ────
-
-if [[ ${#datasets[@]} -eq 1 ]]; then
-  selected_dataset="${datasets[0]}"
-  echo
-  echo "Dataset: ${selected_dataset}"
-else
-  echo
-  echo "Select a dataset:"
-  for i in "${!datasets[@]}"; do
-    printf "  %2d)  %s\n" "$((i + 1))" "${datasets[$i]}"
-  done
-  echo
-  while true; do
-    read -rp "Enter number (or q to quit): " dchoice </dev/tty
-    case "$dchoice" in
-      q|Q) exit 0 ;;
-      *)
-        if [[ "$dchoice" =~ ^[0-9]+$ && "$dchoice" -ge 1 && "$dchoice" -le "${#datasets[@]}" ]]; then
-          selected_dataset="${datasets[$((dchoice - 1))]}"
-          break
-        fi
-        echo "  Please enter a number from 1 to ${#datasets[@]}, or q to quit."
-        ;;
-    esac
-  done
-fi
-
 # ── Pick hotfix or float ──────────────────────────────────────────────────────
 
 hotfix_tags=()
@@ -183,18 +155,18 @@ done
 floating_tag="${selected_minor}.x"
 
 echo
-echo "Builds for ${selected_minor} / ${selected_dataset} (newest first):"
+echo "Builds for ${selected_minor} (newest first):"
 echo
 
 for i in "${!hotfix_tags[@]}"; do
   tag="${hotfix_tags[$i]}"
   label="$tag"
-  [[ -f "$STACK_ROOT/env/mb_versions/${tag#v}_${selected_dataset}.env" ]] && label+="  (already configured)"
+  find "$STACK_ROOT/env/mb_versions" -maxdepth 1 -name "${tag#v}_*.env" 2>/dev/null | grep -q . && label+="  (stack exists)"
   printf "  %2d)  %s\n" "$((i + 1))" "$label"
 done
 
 float_label="Float on latest patch  →  MB_IMAGE_TAG=${floating_tag}  (auto-pulls newer bugfixes on make start)"
-[[ -f "$STACK_ROOT/env/mb_versions/${floating_tag}_${selected_dataset}.env" ]] && float_label+="  (already configured)"
+find "$STACK_ROOT/env/mb_versions" -maxdepth 1 -name "${floating_tag}_*.env" 2>/dev/null | grep -q . && float_label+="  (a variant exists)"
 echo
 echo "  f)  ${float_label}"
 echo "  q)  Quit"
@@ -224,6 +196,34 @@ while true; do
       ;;
   esac
 done
+
+# ── Select dataset ────────────────────────────────────────────────────────────
+
+if [[ ${#datasets[@]} -eq 1 ]]; then
+  selected_dataset="${datasets[0]}"
+  echo
+  echo "Dataset: ${selected_dataset}"
+else
+  echo
+  echo "Select a dataset:"
+  for i in "${!datasets[@]}"; do
+    printf "  %2d)  %s\n" "$((i + 1))" "${datasets[$i]}"
+  done
+  echo
+  while true; do
+    read -rp "Enter number (or q to quit): " dchoice </dev/tty
+    case "$dchoice" in
+      q|Q) exit 0 ;;
+      *)
+        if [[ "$dchoice" =~ ^[0-9]+$ && "$dchoice" -ge 1 && "$dchoice" -le "${#datasets[@]}" ]]; then
+          selected_dataset="${datasets[$((dchoice - 1))]}"
+          break
+        fi
+        echo "  Please enter a number from 1 to ${#datasets[@]}, or q to quit."
+        ;;
+    esac
+  done
+fi
 
 # ── Check this (version, dataset) combination doesn't already exist ───────────
 
@@ -307,7 +307,7 @@ ENABLE_SAML=${enable_saml_val}
 EOF
 
 if [[ -n "$stack_label" ]]; then
-  echo "STACK_LABEL=${stack_label}" >> "$env_file"
+  echo "STACK_LABEL=\"${stack_label}\"" >> "$env_file"
 fi
 
 echo

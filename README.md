@@ -8,7 +8,7 @@ Spin up isolated, fully-seeded Metabase stacks for different versions — each w
 
 ## Before First Start
 
-**Requirements:** Docker Desktop (Windows/macOS) or Docker Engine + Compose plugin (Linux), Git Bash (Windows), curl, jq, a Metabase Pro/Enterprise token, an Anthropic API key.
+**Requirements:** Docker Desktop (Windows/macOS) or Docker Engine + Compose plugin (Linux), Git Bash (Windows), curl, jq, a Metabase Pro/Enterprise token, an Anthropic API key. Node.js is optional — it enables the [Metabase CLI](#metabase-cli-mb); `make start` falls back to `npx` automatically if Node isn't installed.
 
 > On Windows: `jq.exe` may need `JQ_BIN=/c/path/to/jq.exe` in `env/common.env` if it is not on PATH inside Git Bash.
 
@@ -19,6 +19,7 @@ Spin up isolated, fully-seeded Metabase stacks for different versions — each w
    - Set `MB_PREMIUM_EMBEDDING_TOKEN` — required for config-file bootstrap.
    - Set `MB_LLM_ANTHROPIC_API_KEY` — required for Metabot.
 3. Adjust credentials or ports if needed.
+4. *(Optional, recommended)* Install the [Metabase CLI](#metabase-cli-mb) globally: `npm install -g @metabase/cli`. Skip this and `make start` falls back to `npx` automatically — slower per call, but nothing else to set up.
 
 `env/common.env` is gitignored — each user maintains their own copy.
 
@@ -114,6 +115,37 @@ Each `make start` automatically registers the running Metabase stack as an MCP s
 - **Check the startup summary.** If it said `MCP server  registration failed`, the `claude` CLI was not found on PATH in the terminal where you ran `make start`. Registration is silently skipped in that case — run `make start` again from a terminal where `claude` is available.
 - **Multiple stacks** each get their own named MCP entry (e.g. `mb_1_62_3_x_sample_mysql8`), so you can have several registered simultaneously. Each new Claude session sees all of them.
 - **`make nuke`** removes the MCP entry for that stack automatically.
+
+---
+
+## Metabase CLI (`mb`)
+
+Each `make start` also authenticates the official [Metabase CLI](https://www.npmjs.com/package/@metabase/cli) (`mb`) against the running stack, using the same automation key as MCP. It gives you (or an AI agent) terminal access to the same content CRUD as MCP, plus things MCP doesn't expose — transforms, git-sync, documents, and more.
+
+**Install (optional but recommended):**
+
+```bash
+npm install -g @metabase/cli
+```
+
+- **Windows:** usually works immediately — npm's default global install location is already user-owned.
+- **Linux, with Node from a system package manager (e.g. `apt install nodejs npm`):** often fails with `EACCES`, because npm's default global prefix (`/usr/local`) is root-owned. Fix with a user-owned npm prefix, or reinstall Node via [nvm](https://github.com/nvm-sh/nvm) instead — recommended, since every future global install then works with no extra config.
+
+No install? No problem — `make start` falls back to `npx @metabase/cli@latest` automatically (slower per call, since npx re-resolves the package each time, but functionally identical).
+
+**Multiple stacks:** each gets its own CLI profile, named after the stack (the same name as its MCP server entry), so running several stacks concurrently doesn't overwrite each other's saved credentials. `--profile <name>` is required on every `mb` command you run yourself — check the "Metabase CLI" line in the summary `make start` prints for the exact profile name, or list them all:
+
+```bash
+mb auth list --json
+```
+
+**Learning the CLI:** it ships its own docs, and they're more reliable than anything external — the CLI's actual flags have been observed to differ from what the public docs page and web search describe:
+
+```bash
+mb --help
+mb skills list    # bundled skill docs — read `core` first
+mb __manifest     # full machine-readable command/flag inventory
+```
 
 ---
 

@@ -20,6 +20,49 @@ start_docker_desktop() {
   esac
 }
 
+# Locate the claude CLI, echoing its path on success. Most users only ever run
+# Claude Code through the VSCode/Cursor extension, which never puts `claude`
+# on PATH — so PATH alone misses them on every platform (Linux, macOS,
+# Windows/Git Bash). Falls back to $CLAUDE_CODE_EXECPATH (set by the extension
+# for the current session) and then to the extension's own install directory,
+# so `make start`/`make nuke` run from an integrated terminal can still find
+# it, or find whichever editor last installed the extension.
+resolve_claude_bin() {
+  if [[ -n "${CLAUDE_CODE_EXECPATH:-}" && -x "${CLAUDE_CODE_EXECPATH}" ]]; then
+    echo "$CLAUDE_CODE_EXECPATH"
+    return 0
+  fi
+
+  if command -v claude >/dev/null 2>&1; then
+    command -v claude
+    return 0
+  fi
+
+  local editor_root candidate bin
+  for editor_root in \
+    "$HOME/.vscode/extensions" \
+    "$HOME/.vscode-server/extensions" \
+    "$HOME/.vscode-insiders/extensions" \
+    "$HOME/.vscode-server-insiders/extensions" \
+    "$HOME/.cursor/extensions" \
+    "$HOME/.cursor-server/extensions"
+  do
+    [[ -d "$editor_root" ]] || continue
+    # Newest extension version sorts last with `sort -V`.
+    candidate="$(find "$editor_root" -maxdepth 1 -type d -name 'anthropic.claude-code-*' 2>/dev/null \
+      | sort -V | tail -n1)"
+    [[ -n "$candidate" ]] || continue
+    for bin in "$candidate/resources/native-binary/claude" "$candidate/resources/native-binary/claude.exe"; do
+      if [[ -x "$bin" ]]; then
+        echo "$bin"
+        return 0
+      fi
+    done
+  done
+
+  return 1
+}
+
 normalize_shell_path() {
   local raw_path="$1"
 

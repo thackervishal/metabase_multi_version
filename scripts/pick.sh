@@ -59,7 +59,7 @@ combos=()
 for env_file_path in "${env_file_paths[@]}"; do
   version="$(grep -E '^MB_IMAGE_TAG=' "$env_file_path" 2>/dev/null | cut -d= -f2 | tr -d '\r' || true)"
   dataset="$(grep -E '^DATASET=' "$env_file_path" 2>/dev/null | cut -d= -f2 | tr -d '\r' || true)"
-  stack_label="$(grep -E '^STACK_LABEL=' "$env_file_path" 2>/dev/null | cut -d= -f2- | tr -d '\r' || true)"
+  stack_label="$(grep -E '^STACK_LABEL=' "$env_file_path" 2>/dev/null | cut -d= -f2- | tr -d '\r"' || true)"
   [[ -z "$version" || -z "$dataset" ]] && continue  # skip incomplete env files
 
   if is_running "$version" "$dataset"; then

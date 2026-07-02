@@ -20,7 +20,7 @@ load_common_env
 _project="$(project_name_for "$VERSION" "$DATASET_KEY")"
 rm -f "$STACK_ROOT/.state/${_project}.sample-dwh-seeded"
 rm -f "$STACK_ROOT/.state/${_project}.metabase-seeded"
-command -v claude &>/dev/null && claude mcp remove "$_project" -s project 2>/dev/null || true
+_claude_bin="$(resolve_claude_bin)" && "$_claude_bin" mcp remove "$_project" -s project 2>/dev/null || true
 
 load_stack_env "$VERSION" "$DATASET_KEY"
 

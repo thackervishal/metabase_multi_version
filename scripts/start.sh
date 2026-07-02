@@ -80,15 +80,46 @@ container_name="mb-${MB_VERSION}-${DATASET}-${METABASE_PORT}-admin"
 ff_result=0
 bash "$SCRIPT_DIR/firefox-container.sh" "$container_name" || ff_result=$?
 
+MCP_URL="http://127.0.0.1:${METABASE_PORT}/api/metabase-mcp"
+
 mcp_result=0
-if command -v claude &>/dev/null; then
-  claude mcp remove "$COMPOSE_PROJECT_NAME" -s project 2>/dev/null || true
-  claude mcp add --transport http "$COMPOSE_PROJECT_NAME" \
-    "http://127.0.0.1:${METABASE_PORT}/api/metabase-mcp" \
+if claude_bin="$(resolve_claude_bin)"; then
+  "$claude_bin" mcp remove "$COMPOSE_PROJECT_NAME" -s project 2>/dev/null || true
+  "$claude_bin" mcp add --transport http "$COMPOSE_PROJECT_NAME" \
+    "$MCP_URL" \
     --header "x-api-key: ${MB_AUTOMATION_API_KEY}" \
     -s project >/dev/null 2>&1 || mcp_result=1
+  if [[ $mcp_result -eq 0 ]]; then
+    "$claude_bin" mcp list 2>/dev/null || true
+  fi
 else
   mcp_result=2
+fi
+
+CLI_URL="http://127.0.0.1:${METABASE_PORT}"
+
+# Prefer a globally installed `mb` (fast); fall back to npx (slower, but works
+# without a global install) for devs who haven't run `npm install -g @metabase/cli`.
+if command -v mb >/dev/null 2>&1; then
+  MB_CMD=(mb)
+elif command -v npx >/dev/null 2>&1; then
+  MB_CMD=(npx --yes @metabase/cli@latest)
+else
+  MB_CMD=()
+fi
+
+# Profile is keyed by COMPOSE_PROJECT_NAME (same key MCP registration uses above)
+# so running multiple stacks doesn't overwrite each other's saved CLI credentials.
+cli_result=0
+if [[ ${#MB_CMD[@]} -gt 0 ]]; then
+  if ! MB_API_KEY="$MB_AUTOMATION_API_KEY" "${MB_CMD[@]}" auth login \
+      --profile "$COMPOSE_PROJECT_NAME" \
+      --url "$CLI_URL" \
+      >/dev/null 2>&1; then
+    cli_result=1
+  fi
+else
+  cli_result=2
 fi
 
 SEP="------------------------------------------------------------"
@@ -100,19 +131,27 @@ echo "  Metabase        http://localhost:${METABASE_PORT}"
 echo "    admin         ${MB_ADMIN_EMAIL}  /  ${MB_ADMIN_PASSWORD}"
 echo "    analyst       ${MB_ANALYST_EMAIL}  /  ${MB_ANALYST_PASSWORD}"
 echo "    sales         ${MB_SALES_EMAIL}  /  ${MB_SALES_PASSWORD}"
-case $ff_result in
-  0) echo "    Firefox tab   ${container_name}" ;;
-  2) echo "    Firefox tab   ${container_name}  (restart Firefox to use)" ;;
-esac
 case $mcp_result in
-  0) echo "    MCP server    ${COMPOSE_PROJECT_NAME}  (start new Claude session)" ;;
-  1) echo "    MCP server    registration failed" ;;
+  0) echo "    MCP server    ${COMPOSE_PROJECT_NAME}"
+     echo "                  ${MCP_URL}"
+     echo "                  open a new Claude session to use it" ;;
+  1) echo "    MCP server    registration failed"
+     echo "                  manual: claude mcp add --transport http ${COMPOSE_PROJECT_NAME} ${MCP_URL} --header \"x-api-key: ${MB_AUTOMATION_API_KEY}\" -s project" ;;
+  2) echo "    MCP server    claude CLI not found, registration skipped"
+     echo "                  manual: claude mcp add --transport http ${COMPOSE_PROJECT_NAME} ${MCP_URL} --header \"x-api-key: ${MB_AUTOMATION_API_KEY}\" -s project" ;;
+esac
+case $cli_result in
+  0) echo "    Metabase CLI  profile ${COMPOSE_PROJECT_NAME}"
+     echo "                  ${MB_CMD[*]} --profile ${COMPOSE_PROJECT_NAME} db list" ;;
+  1) echo "    Metabase CLI  login failed"
+     echo "                  manual: MB_API_KEY=${MB_AUTOMATION_API_KEY} ${MB_CMD[*]} auth login --profile ${COMPOSE_PROJECT_NAME} --url ${CLI_URL}" ;;
+  2) echo "    Metabase CLI  mb not installed and npx not found, login skipped" ;;
 esac
 echo
-echo "  App DB          localhost:${APP_DB_PORT}  db=${MB_APP_DB_NAME}"
+echo "  App DB (PG)     localhost:${APP_DB_PORT}  db=${MB_APP_DB_NAME}"
 echo "                  ${MB_APP_DB_USER}  /  ${MB_APP_DB_PASSWORD}"
 echo
-echo "  Sample DWH      localhost:${SAMPLE_DB_PORT}  db=${SAMPLE_DB_NAME}"
+echo "  Sample DWH (${SAMPLE_DB_TYPE})  localhost:${SAMPLE_DB_PORT}  db=${SAMPLE_DB_NAME}"
 echo "                  ${SAMPLE_DB_USER}  /  ${SAMPLE_DB_PASSWORD}"
 if [[ "${ENABLE_EMAIL}" == "true" ]] || [[ "${ENABLE_WEBHOOKS}" == "true" ]] || [[ "${ENABLE_SAML}" == "true" ]]; then
   echo
@@ -126,5 +165,9 @@ if [[ "${ENABLE_EMAIL}" == "true" ]] || [[ "${ENABLE_WEBHOOKS}" == "true" ]] || 
     echo "  Keycloak        http://keycloak:${KEYCLOAK_PORT:-8180}  admin / admin"
   fi
 fi
+case $ff_result in
+  0) echo; echo "  Firefox tab     ${container_name}" ;;
+  2) echo; echo "  Firefox tab     ${container_name}  (restart Firefox to use)" ;;
+esac
 echo "$SEP"
 echo
