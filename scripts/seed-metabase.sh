@@ -349,7 +349,10 @@ if [[ -n "$database_id" ]]; then
     if [[ -n "$orders_table_id" && -n "$people_table_id" && -n "$products_table_id" && -n "$orders_created_at_field_id" && -n "$people_state_field_id" && -n "$products_category_field_id" && -n "$orders_total_field_id" ]]; then
       # Aggregations referenced by an order-by clause need an explicit
       # lib/uuid (MBQL 5) — mint with `mb uuid`, never hand-authored.
-      mapfile -t agg_uuids < <("${MB_CMD[@]}" uuid --count 2 --json | jq -r '.[]')
+      # `tr -d '\r'` strips the CR the Windows-native mb CLI leaves on each
+      # line; mapfile only strips \n, so without this the UUID carries a
+      # trailing \r that fails MBQL validation server-side.
+      mapfile -t agg_uuids < <("${MB_CMD[@]}" uuid --count 2 --json | jq -r '.[]' | tr -d '\r')
       people_by_state_agg_uuid="${agg_uuids[0]}"
       products_by_category_agg_uuid="${agg_uuids[1]}"
 
@@ -457,7 +460,10 @@ if [[ -n "$database_id" ]]; then
     if [[ -n "$orders_table_id" && -n "$people_table_id" && -n "$products_table_id" && -n "$orders_created_at_field_id" && -n "$people_state_field_id" && -n "$products_category_field_id" && -n "$orders_total_field_id" ]]; then
       # Aggregations referenced by an order-by clause need an explicit
       # lib/uuid (MBQL 5) — mint with `mb uuid`, never hand-authored.
-      mapfile -t agg_uuids < <("${MB_CMD[@]}" uuid --count 2 --json | jq -r '.[]')
+      # `tr -d '\r'` strips the CR the Windows-native mb CLI leaves on each
+      # line; mapfile only strips \n, so without this the UUID carries a
+      # trailing \r that fails MBQL validation server-side.
+      mapfile -t agg_uuids < <("${MB_CMD[@]}" uuid --count 2 --json | jq -r '.[]' | tr -d '\r')
       people_by_state_agg_uuid="${agg_uuids[0]}"
       products_by_category_agg_uuid="${agg_uuids[1]}"
 
