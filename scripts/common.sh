@@ -2,6 +2,16 @@
 
 set -euo pipefail
 
+# The mb CLI defaults to storing API keys in the OS keyring (KWallet/gnome-
+# keyring/Credential Manager) rather than its plaintext profiles.json. That
+# backend is flaky across reboots/OSes (locked wallet, first-run access
+# prompts) — `mb auth login` reports success while silently failing to
+# persist the key, so the next `mb` call in the same stack fails with
+# "Not authenticated for profile ...". Force plaintext storage instead: the
+# automation key is already committed in plaintext to env/common.env, so
+# there's no security downside.
+export MB_CLI_DISABLE_KEYRING=1
+
 STACK_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 require_command() {
