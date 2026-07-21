@@ -47,6 +47,8 @@ To set one up manually:
 
 **Naming:** `1.61.1.x.env` floats on the latest patch (auto-pulled on start). `1.61.1.3.env` pins to a specific build.
 
+**Optional friendly name:** `make new` ends by asking for a `STACK_LABEL` (e.g. `testing keycloak`) — purely cosmetic, shown by `make list` and the `make start`/`stop`/`nuke` picker so you can tell stacks apart at a glance. Skip the prompt to leave it unset, or hand-edit `STACK_LABEL="<value>"` into any existing version env file at any time.
+
 ---
 
 ## Make Commands
@@ -318,7 +320,11 @@ Unless overridden in `env/common.env`:
 
 ### Automation API Key
 
-`MB_AUTOMATION_API_KEY` in `env/common.env` is injected into the container. The dataset's config file (`seed/metabase/config-pg15.yml` or `seed/metabase/config-mysql8.yml`) tells Metabase to create an API key with that exact value at bootstrap, so the seed script can call the API immediately — no manual key creation needed. If you rotate it, rebuild from a clean app_db.
+`make new` generates a random `MB_AUTOMATION_API_KEY` and writes it into that stack's `env/mb_versions/<version>.env` (gitignored, per-stack). The dataset's config file (`seed/metabase/config-pg15.yml` or `seed/metabase/config-mysql8.yml`) tells Metabase to create an API key with that exact value at bootstrap, so the seed script, MCP, and the `mb` CLI can all authenticate immediately — no manual key creation needed. `env/common.env.example` also carries a placeholder value as a fallback for stacks whose version env file doesn't set one (e.g. if you created it by hand from an older template) — replace it with your own generated value, same as `MB_ENCRYPTION_SECRET_KEY`.
+
+If you rotate a stack's key, rebuild from a clean app_db (`make nuke` then `make start`) — it's baked in at bootstrap, not read live.
+
+> **Security note:** Compose publishes `${METABASE_PORT}:3000` without a `127.0.0.1:` bind prefix, so the port is reachable from other machines whenever the host itself is reachable (LAN, cloud VM, etc.), not just from `localhost`. That's fine for a laptop behind a home router or corporate NAT. If you ever run a stack on a host with a public/routable IP, treat its automation key as sensitive like any other admin credential — it's no longer just a shared local-dev convenience once the port is reachable from outside.
 
 ### Files and Scripts
 

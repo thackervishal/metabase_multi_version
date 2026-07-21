@@ -293,6 +293,10 @@ enable_saml="${enable_saml:-N}"
 echo
 read -rp "Give this stack a friendly name (optional, e.g. 'testing keycloak'): " stack_label </dev/tty
 
+# ── Generate a unique automation API key for this stack ──────────────────────
+
+automation_api_key="mb_$(openssl rand -base64 32)"
+
 # ── Write env file ────────────────────────────────────────────────────────────
 
 cat > "$env_file" <<EOF
@@ -304,6 +308,7 @@ SAMPLE_DB_PORT=${sampledwh_port}
 ENABLE_EMAIL=${enable_email_val}
 ENABLE_WEBHOOKS=${enable_webhooks_val}
 ENABLE_SAML=${enable_saml_val}
+MB_AUTOMATION_API_KEY=${automation_api_key}
 EOF
 
 if [[ -n "$stack_label" ]]; then

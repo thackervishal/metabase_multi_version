@@ -8,8 +8,9 @@ set -euo pipefail
 # prompts) — `mb auth login` reports success while silently failing to
 # persist the key, so the next `mb` call in the same stack fails with
 # "Not authenticated for profile ...". Force plaintext storage instead: the
-# automation key is already committed in plaintext to env/common.env, so
-# there's no security downside.
+# automation key is a per-stack generated value living only in gitignored
+# env files (env/mb_versions/<version>.env, falling back to env/common.env),
+# never committed, so plaintext local storage carries no extra exposure.
 export MB_CLI_DISABLE_KEYRING=1
 
 STACK_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -407,7 +408,7 @@ wait_for_service_health() {
 wait_for_metabase() {
   require_command curl
 
-  local max_attempts=30
+  local max_attempts=180
   local sleep_seconds=10
 
   for ((attempt = 1; attempt <= max_attempts; attempt++)); do
