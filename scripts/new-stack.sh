@@ -30,7 +30,7 @@ _majors_raw="$(curl -fsSL \
   "https://hub.docker.com/v2/repositories/metabase/metabase-enterprise/tags?page_size=100&ordering=last_updated" \
   2>/dev/null \
   | jq -r '.results[].name
-      | select(test("^v[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$"))
+      | select(test("^v[0-9]+\\.[0-9]+\\.[0-9]+(\\.[0-9]+)?$"))
       | select(test("beta|rc|alpha"; "i") | not)
       | ltrimstr("v")
       | split(".")[0:2] | join(".")' \
@@ -89,7 +89,7 @@ done < <(
     --arg prefix "v${major_minor}." \
     '.results[].name
       | select(startswith($prefix))
-      | select(test("^v[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$"))
+      | select(test("^v[0-9]+\\.[0-9]+\\.[0-9]+(\\.[0-9]+)?$"))
       | select(test("beta|rc|alpha"; "i") | not)' \
   | tr -d '\r' \
   | sort -V -r
@@ -103,12 +103,22 @@ fi
 
 # ── Pick minor ────────────────────────────────────────────────────────────────
 
-# Derive unique minor versions (X.Y.Z without the hotfix digit), newest first.
+# A tag is either X.Y.Z (a release with no hotfix yet — the minor *is* the tag)
+# or X.Y.Z.W (a hotfix build — the minor is everything but the trailing digit).
+tag_minor() {
+  local stripped="${1#v}"
+  if [[ "$stripped" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    printf '%s\n' "${stripped%.*}"
+  else
+    printf '%s\n' "$stripped"
+  fi
+}
+
+# Derive unique minor versions (X.Y.Z), newest first.
 minor_list=()
 declare -A seen_minors
 for tag in "${all_tags[@]}"; do
-  stripped="${tag#v}"
-  minor="${stripped%.*}"
+  minor="$(tag_minor "$tag")"
   if [[ -z "${seen_minors[$minor]+x}" ]]; then
     seen_minors["$minor"]=1
     minor_list+=("$minor")
@@ -122,8 +132,9 @@ echo
 for i in "${!minor_list[@]}"; do
   minor="${minor_list[$i]}"
   label="$minor"
-  if find "$STACK_ROOT/env/mb_versions" -maxdepth 1 -name "${minor}.[0-9]*_*.env" 2>/dev/null | grep -q .; then
-    label+="  (stack exists)"
+  if find "$STACK_ROOT/env/mb_versions" -maxdepth 1 \
+       \( -name "${minor}_*.env" -o -name "${minor}.[0-9x]*_*.env" \) 2>/dev/null | grep -q .; then
+    label+="  (a stack exists)"
   fi
   printf "  %2d)  %s\n" "$((i + 1))" "$label"
 done
@@ -148,8 +159,7 @@ done
 
 hotfix_tags=()
 for tag in "${all_tags[@]}"; do
-  stripped="${tag#v}"
-  [[ "${stripped%.*}" == "$selected_minor" ]] && hotfix_tags+=("$tag")
+  [[ "$(tag_minor "$tag")" == "$selected_minor" ]] && hotfix_tags+=("$tag")
 done
 
 floating_tag="${selected_minor}.x"
