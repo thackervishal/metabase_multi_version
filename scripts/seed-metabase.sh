@@ -217,10 +217,17 @@ table_fields_json() {
   local projection="${2:-compact}"
   local cache_key="${table_id}:${projection}"
   if [[ -z "${table_fields_cache[$cache_key]:-}" ]]; then
+    # `table fields` (not `table get --include fields`) — it's a paginated
+    # projection that truncates gracefully past --max-bytes instead of
+    # hard-failing, and it's the CLI's own recommended replacement. A table
+    # with a jsonb column (e.g. person_profiles_json) unfolds into enough
+    # virtual sub-fields that --full output exceeds the CLI's default 24KB
+    # cap; --max-bytes 0 disables the cap since this call is already scoped
+    # to one table's fields, a small, known-bounded seed dataset.
     if [[ "$projection" == "full" ]]; then
-      table_fields_cache[$cache_key]="$(mb_cli table get "$table_id" --include fields --full --json)"
+      table_fields_cache[$cache_key]="$(mb_cli table fields "$table_id" --full --max-bytes 0 --json)"
     else
-      table_fields_cache[$cache_key]="$(mb_cli table get "$table_id" --include fields --json)"
+      table_fields_cache[$cache_key]="$(mb_cli table fields "$table_id" --max-bytes 0 --json)"
     fi
   fi
   echo "${table_fields_cache[$cache_key]}"
@@ -229,7 +236,7 @@ table_fields_json() {
 field_id_by_name() {
   local table_id="$1"
   local field_name="$2"
-  table_fields_json "$table_id" | jq -r --arg field_name "$field_name" '.fields[]? | select((.name | ascii_downcase) == ($field_name | ascii_downcase)) | .id' | head -n 1
+  table_fields_json "$table_id" | jq -r --arg field_name "$field_name" '.data[]? | select((.name | ascii_downcase) == ($field_name | ascii_downcase)) | .id' | head -n 1
 }
 
 # nfc_path (needed to locate the JSON-unfolded column) only appears in the
@@ -237,7 +244,7 @@ field_id_by_name() {
 field_id_by_nfc_path() {
   local table_id="$1"
   local nfc_path_json="$2"
-  table_fields_json "$table_id" "full" | jq -r --argjson nfc_path "$nfc_path_json" '.fields[]? | select(.nfc_path == $nfc_path) | .id' | head -n 1
+  table_fields_json "$table_id" "full" | jq -r --argjson nfc_path "$nfc_path_json" '.data[]? | select(.nfc_path == $nfc_path) | .id' | head -n 1
 }
 
 add_card_to_dashboard() {
