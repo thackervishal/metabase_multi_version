@@ -158,6 +158,15 @@ ensure_cache_policy "root" 0 "$DEFAULT_CACHE_POLICY_DURATION" "$DEFAULT_CACHE_PO
 database_id="$(wait_for_database_id_by_name "$SAMPLE_DB_DISPLAY_NAME")"
 ensure_cache_policy "database" "$database_id" "$DATABASE_CACHE_POLICY_DURATION" "$DATABASE_CACHE_POLICY_UNIT" "$DATABASE_CACHE_POLICY_REFRESH_AUTOMATICALLY"
 
+# This dataset has no orders/people/products tables (the demo content every
+# other branch below assumes) — just NYC taxi trip data the user queries
+# themselves. Cache policy above still applies; skip everything else.
+if [[ "$DATASET_KEY" == clickhouse-nyctaxi* ]]; then
+  echo "ClickHouse NYC taxi dataset — no demo content to seed for ${COMPOSE_PROJECT_NAME}."
+  printf '%s\n' "$SEED_CONTENT_VERSION" >"$METABASE_SEED_MARKER"
+  exit 0
+fi
+
 current_seed_content_version=""
 if [[ -f "$METABASE_SEED_MARKER" ]]; then
   current_seed_content_version="$(<"$METABASE_SEED_MARKER")"

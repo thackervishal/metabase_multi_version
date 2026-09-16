@@ -40,11 +40,37 @@ wait_for_service_health sample-dwh 30 10
 
 "$SCRIPT_DIR/seed-sample-dwh.sh" "$VERSION" "$DATASET_KEY"
 
+if [[ "${ENABLE_TRINO}" == "true" ]]; then
+  if [[ "${DATASET}" != "sample-pg15" ]]; then
+    echo "Warning: ENABLE_TRINO is currently only wired up for the sample-pg15 dataset (its generated catalog points at sample-dwh as Postgres). Continuing anyway, but Trino's catalog may not connect correctly for dataset '${DATASET}'." >&2
+  fi
+  ensure_trino_config
+  compose up -d trino
+  wait_for_trino
+fi
+
 mkdir -p "$STACK_ROOT/metabot-debug-logs/$COMPOSE_PROJECT_NAME"
 chmod o+w "$STACK_ROOT/metabot-debug-logs/$COMPOSE_PROJECT_NAME"
+if [[ "${ENABLE_REMOTE_SYNC}" == "true" ]]; then
+  ensure_remote_sync_repo
+  ensure_remote_sync_checkout
+fi
 compose up -d metabase
 wait_for_metabase
-"$SCRIPT_DIR/seed-metabase.sh" "$VERSION" "$DATASET_KEY"
+
+# Not fatal to the stack: Metabase itself is already up and reachable by this
+# point (wait_for_metabase above), so a seeding failure here — e.g. a
+# permissions error creating demo cards on an older Metabase build that
+# doesn't grant the automation key's group unrestricted data access the same
+# way current versions do — shouldn't tear down an otherwise working stack.
+# `|| seed_result=$?` (not a bare call) is what keeps this from tripping the
+# `trap cleanup_on_error ERR` above.
+seed_result=0
+"$SCRIPT_DIR/seed-metabase.sh" "$VERSION" "$DATASET_KEY" || seed_result=$?
+if [[ $seed_result -ne 0 ]]; then
+  echo "Warning: demo content seeding failed (exit ${seed_result}) — Metabase itself is up and reachable." >&2
+  echo "  Retry later with: bash scripts/seed-metabase.sh ${VERSION} ${DATASET_KEY}" >&2
+fi
 
 if [[ "${ENABLE_WEBHOOKS}" == "true" ]]; then
   webhook_internal_url="http://webhook-tester:8080/${WEBHOOK_SESSION_ID}"
@@ -114,6 +140,10 @@ echo "  Metabase        http://localhost:${METABASE_PORT}"
 echo "    admin         ${MB_ADMIN_EMAIL}  /  ${MB_ADMIN_PASSWORD}"
 echo "    analyst       ${MB_ANALYST_EMAIL}  /  ${MB_ANALYST_PASSWORD}"
 echo "    sales         ${MB_SALES_EMAIL}  /  ${MB_SALES_PASSWORD}"
+if [[ $seed_result -ne 0 ]]; then
+  echo "    Demo content  seeding failed (exit ${seed_result}) — Metabase is otherwise up and usable"
+  echo "                  retry: bash scripts/seed-metabase.sh ${VERSION} ${DATASET_KEY}"
+fi
 case $mcp_result in
   0) echo "    MCP server    ${COMPOSE_PROJECT_NAME}"
      echo "                  ${MCP_URL}"
@@ -136,7 +166,7 @@ echo "                  ${MB_APP_DB_USER}  /  ${MB_APP_DB_PASSWORD}"
 echo
 echo "  Sample DWH (${SAMPLE_DB_TYPE})  localhost:${SAMPLE_DB_PORT}  db=${SAMPLE_DB_NAME}"
 echo "                  ${SAMPLE_DB_USER}  /  ${SAMPLE_DB_PASSWORD}"
-if [[ "${ENABLE_EMAIL}" == "true" ]] || [[ "${ENABLE_WEBHOOKS}" == "true" ]] || [[ "${ENABLE_SAML}" == "true" ]]; then
+if [[ "${ENABLE_EMAIL}" == "true" ]] || [[ "${ENABLE_WEBHOOKS}" == "true" ]] || [[ "${ENABLE_SAML}" == "true" ]] || [[ "${ENABLE_REMOTE_SYNC}" == "true" ]] || [[ "${ENABLE_TRINO}" == "true" ]]; then
   echo
   if [[ "${ENABLE_EMAIL}" == "true" ]]; then
     echo "  Mailpit         http://localhost:${MAILPIT_UI_PORT:-8025}"
@@ -146,6 +176,20 @@ if [[ "${ENABLE_EMAIL}" == "true" ]] || [[ "${ENABLE_WEBHOOKS}" == "true" ]] || 
   fi
   if [[ "${ENABLE_SAML}" == "true" ]]; then
     echo "  Keycloak        http://keycloak:${KEYCLOAK_PORT:-8180}  admin / admin"
+  fi
+  if [[ "${ENABLE_REMOTE_SYNC}" == "true" ]]; then
+    echo "  Remote Sync     file:///remote-sync/repo.git  (read-write, already connected)"
+    echo "                  bare repo: data/remote-sync/${COMPOSE_PROJECT_NAME}/  (no browsable files — it's bare)"
+    echo "                  browsable checkout: data/remote-sync-checkout/${COMPOSE_PROJECT_NAME}/"
+    echo "                  auto-refresh that checkout on every push: make watch-remote-sync MB_VERSION=${MB_VERSION} DATASET=${DATASET}"
+    echo "                  turn on 'Sync transforms' yourself in Admin > Remote Sync if wanted"
+  fi
+  if [[ "${ENABLE_TRINO}" == "true" ]]; then
+    echo "  Trino           http://localhost:${TRINO_PORT}  (coordinator UI / JDBC)"
+    echo "                  in Metabase, add a Starburst (Trino) database: host=trino  port=8080  catalog=postgresql"
+    echo "                  access-control rules (yours to edit): data/trino-config/${COMPOSE_PROJECT_NAME}/access-control/rules.json"
+    echo "                  (Trino picks up edits within ~5s, no restart needed)"
+    echo "                  walkthrough: .github/agent-trino-impersonation.md"
   fi
 fi
 case $ff_result in

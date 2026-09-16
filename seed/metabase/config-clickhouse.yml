@@ -1,0 +1,37 @@
+version: 1
+config:
+  settings:
+    site-name: "{{ env MB_SITE_NAME }}"
+    application-name: "{{ env MB_APPLICATION_NAME }}"
+    site-locale: en
+    allow-tracking: false
+  users:
+    - first_name: Stack
+      last_name: Admin
+      email: "{{ env MB_ADMIN_EMAIL }}"
+      password: "{{ env MB_ADMIN_PASSWORD }}"
+      is_superuser: true
+    - first_name: Data
+      last_name: Analyst
+      email: "{{ env MB_ANALYST_EMAIL }}"
+      password: "{{ env MB_ANALYST_PASSWORD }}"
+    - first_name: Sales
+      last_name: User
+      email: "{{ env MB_SALES_EMAIL }}"
+      password: "{{ env MB_SALES_PASSWORD }}"
+  api-keys:
+    - name: Automation Admin Key
+      creator: "{{ env MB_ADMIN_EMAIL }}"
+      group: admin
+      key: "{{ env MB_AUTOMATION_API_KEY }}"
+  databases:
+    - name: "{{ env SAMPLE_DB_DISPLAY_NAME }}"
+      engine: clickhouse
+      details:
+        host: sample-dwh
+        port: 8123
+        user: "{{ env SAMPLE_DB_USER }}"
+        password: "{{ env SAMPLE_DB_PASSWORD }}"
+        enable-multiple-db: false
+        dbname: "{{ env SAMPLE_DB_NAME }}"
+        ssl: false

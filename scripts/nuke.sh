@@ -51,6 +51,21 @@ if [[ -d "$log_dir" ]]; then
   rm -rf "$log_dir"
   echo "Removed metabot-debug-logs/${COMPOSE_PROJECT_NAME}"
 fi
+remote_sync_dir="$(remote_sync_repo_dir)"
+if [[ -d "$remote_sync_dir" ]]; then
+  rm -rf "$remote_sync_dir"
+  echo "Removed data/remote-sync/${COMPOSE_PROJECT_NAME}"
+fi
+remote_sync_checkout_dir_path="$(remote_sync_checkout_dir)"
+if [[ -d "$remote_sync_checkout_dir_path" ]]; then
+  rm -rf "$remote_sync_checkout_dir_path"
+  echo "Removed data/remote-sync-checkout/${COMPOSE_PROJECT_NAME}"
+fi
+trino_config_dir_path="$(trino_config_dir)"
+if [[ -d "$trino_config_dir_path" ]]; then
+  rm -rf "$trino_config_dir_path"
+  echo "Removed data/trino-config/${COMPOSE_PROJECT_NAME} (including your hand-edited access-control rules)"
+fi
 container_name="mb-${MB_VERSION}-${DATASET}-${METABASE_PORT}-admin"
 bash "$SCRIPT_DIR/firefox-container.sh" "$container_name" --remove 2>/dev/null || true
 

@@ -126,7 +126,7 @@ add_container() {
   local profile_dir="$2"
   local containers_json="$profile_dir/containers.json"
   local containers_json_native
-  containers_json_native="$(normalize_docker_path "$containers_json")"
+  containers_json_native="$(normalize_native_path "$containers_json")"
 
   if [[ ! -f "$containers_json" ]]; then
     # Firefox only writes containers.json once a custom container exists.
@@ -172,7 +172,7 @@ remove_container() {
   local profile_dir="$2"
   local containers_json="$profile_dir/containers.json"
   local containers_json_native
-  containers_json_native="$(normalize_docker_path "$containers_json")"
+  containers_json_native="$(normalize_native_path "$containers_json")"
 
   [[ -f "$containers_json" ]] || return 0
 
@@ -205,7 +205,7 @@ fi
 
 # Check existence before touching Firefox — only close it if we actually need to create the container
 containers_json="$profile_dir/containers.json"
-containers_json_native="$(normalize_docker_path "$containers_json")"
+containers_json_native="$(normalize_native_path "$containers_json")"
 
 if [[ -f "$containers_json" ]]; then
   existing="$(jq -r --arg n "$CONTAINER_NAME" \

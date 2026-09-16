@@ -1,0 +1,16 @@
+services:
+  metabase:
+    environment:
+      # Points Remote Sync (git-backed collection/library sync, EE-only) at
+      # the empty bare repo scripts/common.sh's ensure_remote_sync_repo
+      # creates on the host before this container starts. Both settings have
+      # :can-read-from-env? true, so Admin > Remote Sync shows a repo already
+      # connected. Deliberately NOT setting remote-sync-transforms or
+      # remote-sync-branch here: the transforms toggle has no env-var
+      # equivalent in Metabase itself (admin-only), and which
+      # collections/branch to sync is a per-user choice — flip those on
+      # yourself in the Admin UI.
+      MB_REMOTE_SYNC_URL: file:///remote-sync/repo.git
+      MB_REMOTE_SYNC_TYPE: read-write
+    volumes:
+      - ../data/remote-sync/${COMPOSE_PROJECT_NAME}:/remote-sync/repo.git

@@ -1,0 +1,23 @@
+services:
+  trino:
+    image: trinodb/trino:483
+    container_name: ${COMPOSE_PROJECT_NAME}-trino
+    ports:
+      - "${TRINO_PORT:-8090}:8080"
+    volumes:
+      # Postgres catalog: generated per-stack by scripts/common.sh's
+      # ensure_trino_config() from this stack's own sample-dwh credentials.
+      # Safe to regenerate on every start — fully derived, never hand-edited.
+      - ../data/trino-config/${COMPOSE_PROJECT_NAME}/catalog:/etc/trino/catalog:ro
+      # Fixed infra: turns on Trino's built-in file-based access control and
+      # points it at the rules.json below. Not meant to be hand-edited.
+      - ../seed/trino/etc/access-control.properties:/etc/trino/access-control.properties:ro
+      # The actual policy file: seeded ONCE (see ensure_trino_config) from
+      # seed/trino/access-control/rules.example.json, then left alone. This is
+      # the file you hand-edit to add impersonation/table/row rules.
+      - ../data/trino-config/${COMPOSE_PROJECT_NAME}/access-control:/etc/trino/access-control:ro
+    depends_on:
+      sample-dwh:
+        condition: service_healthy
+    networks:
+      - default

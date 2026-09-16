@@ -21,6 +21,18 @@ fi
 
 if [[ "$DATASET_KEY" == sample-mysql* ]]; then
   echo "MySQL QA image is pre-seeded — no warehouse seed to apply for ${COMPOSE_PROJECT_NAME}."
+elif [[ "$DATASET_KEY" == clickhouse-nyctaxi* ]]; then
+  nyctaxi_dir="$STACK_ROOT/data/clickhouse-nyctaxi"
+  if [[ -z "$(find "$nyctaxi_dir" -maxdepth 1 -name '*.parquet' -print -quit 2>/dev/null)" ]]; then
+    echo "No Parquet files found in ${nyctaxi_dir}." >&2
+    echo "Run 'bash scripts/download-nyctaxi-data.sh <year>' once, then retry." >&2
+    exit 1
+  fi
+  echo "Creating file-backed view over NYC taxi Parquet data for ${COMPOSE_PROJECT_NAME}/${SAMPLE_DB_NAME}"
+  compose exec -T sample-dwh clickhouse-client \
+    --user "$SAMPLE_DB_USER" --password "$SAMPLE_DB_PASSWORD" \
+    --query "CREATE OR REPLACE VIEW ${SAMPLE_DB_NAME}.nyc_taxi_trips_files AS SELECT * FROM file('nyctaxi/yellow_tripdata_*.parquet', Parquet)"
+  echo "NYC taxi file view (${SAMPLE_DB_NAME}.nyc_taxi_trips_files) ready for ${COMPOSE_PROJECT_NAME}."
 else
   sql_file="$STACK_ROOT/seed/sample-dwh/person_profiles_json.sql"
   if [[ ! -f "$sql_file" ]]; then

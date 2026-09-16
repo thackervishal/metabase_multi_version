@@ -134,7 +134,19 @@ normalize_shell_path() {
   echo "$raw_path" | sed 's#\\#/#g'
 }
 
-normalize_docker_path() {
+# Converts a POSIX (/c/...) path to the Windows-native form a non-MSYS
+# native binary needs — not just Docker: any native .exe git spawns (git.exe
+# included) has the exact same requirement. MSYS normally auto-converts
+# POSIX-looking argv paths for you when spawning a native child process, but
+# that conversion is disabled by MSYS_NO_PATHCONV=1 or a matching
+# MSYS2_ARG_CONV_EXCL — both common Git-Bash-on-Windows workarounds for
+# Docker's own volume-mount path mangling — which otherwise makes a call
+# like `git -C "$posix_path"` fail with "cannot change to '...': No such
+# file or directory" for a directory that verifiably exists (confirmed
+# live). Pre-converting here sidesteps that regardless of those env vars,
+# since a path that's already Windows-native form never needs (and never
+# gets) that conversion in the first place.
+normalize_native_path() {
   local raw_path="$1"
 
   if command -v cygpath >/dev/null 2>&1; then
@@ -311,6 +323,9 @@ load_stack_env() {
   export ENABLE_EMAIL="${ENABLE_EMAIL:-false}"
   export ENABLE_WEBHOOKS="${ENABLE_WEBHOOKS:-false}"
   export ENABLE_SAML="${ENABLE_SAML:-false}"
+  export ENABLE_REMOTE_SYNC="${ENABLE_REMOTE_SYNC:-false}"
+  export ENABLE_TRINO="${ENABLE_TRINO:-false}"
+  export TRINO_PORT="${TRINO_PORT:-8090}"
 
   if [[ "${ENABLE_WEBHOOKS}" == "true" ]]; then
     export MB_HTTP_CHANNEL_HOST_STRATEGY="allow-private"
@@ -346,7 +361,7 @@ refresh_metabase_image() {
 
 compose() {
   local docker_stack_root
-  docker_stack_root="$(normalize_docker_path "$STACK_ROOT")"
+  docker_stack_root="$(normalize_native_path "$STACK_ROOT")"
 
   local -a compose_files
   compose_files=(
@@ -355,6 +370,12 @@ compose() {
   )
   [[ "${ENABLE_EMAIL:-false}" == "true" ]] && \
     compose_files+=(-f "$docker_stack_root/compose/email-overlay.yml")
+  [[ "${ENABLE_METABOT:-false}" == "true" ]] && \
+    compose_files+=(-f "$docker_stack_root/compose/metabot-overlay.yml")
+  [[ "${ENABLE_REMOTE_SYNC:-false}" == "true" ]] && \
+    compose_files+=(-f "$docker_stack_root/compose/remote-sync-overlay.yml")
+  [[ "${ENABLE_TRINO:-false}" == "true" ]] && \
+    compose_files+=(-f "$docker_stack_root/compose/trino-overlay.yml")
 
   docker compose -p "$COMPOSE_PROJECT_NAME" "${compose_files[@]}" "$@"
 }
@@ -363,6 +384,133 @@ ensure_external_volumes() {
   require_command docker
   docker volume create "$APP_DB_VOLUME" >/dev/null
   docker volume create "$SAMPLE_DB_VOLUME" >/dev/null
+}
+
+remote_sync_repo_dir() {
+  echo "$STACK_ROOT/data/remote-sync/${COMPOSE_PROJECT_NAME}"
+}
+
+# Idempotently creates the bare git repo bind-mounted into the metabase
+# container by compose/remote-sync-overlay.yml when ENABLE_REMOTE_SYNC=true,
+# and seeds it with one empty commit on `main`.
+#
+# The seed commit is required, not cosmetic: Metabase's own connection check
+# (has-data? in metabase-enterprise.remote-sync.source.git) rejects a repo
+# with zero branches — even in read-write mode — with "Cannot connect to
+# uninitialized repository". A plain `git init --bare` alone leaves HEAD as
+# an unborn symref with no actual refs/heads/*, which fails that check. A
+# bare repo has no working tree to commit into directly, so seeding goes
+# through a throwaway non-bare clone that's discarded immediately after.
+#
+# Verifies its own postcondition (a real ref exists) rather than trusting
+# git's exit codes alone — this repo has a documented history of Windows
+# antivirus intermittently interfering with freshly-written files (see the
+# curl --retry-all-errors note for scripts/download-nyctaxi-data.sh), and a
+# silently-empty bind mount here surfaces later as a confusing JGit error
+# inside the Metabase UI instead of a clear failure here.
+ensure_remote_sync_repo() {
+  require_command git
+  local repo_dir repo_dir_native
+  repo_dir="$(remote_sync_repo_dir)"
+  repo_dir_native="$(normalize_native_path "$repo_dir")"
+  mkdir -p "$repo_dir"
+  [[ -f "$repo_dir/HEAD" ]] || git init --bare --quiet "$repo_dir_native"
+  git --git-dir="$repo_dir_native" symbolic-ref HEAD refs/heads/main
+
+  if ! git --git-dir="$repo_dir_native" show-ref --quiet; then
+    local scratch scratch_native
+    scratch="$(mktemp -d)"
+    scratch_native="$(normalize_native_path "$scratch")"
+    git -c init.defaultBranch=main init --quiet "$scratch_native"
+    git -C "$scratch_native" -c user.email="remote-sync@localhost" -c user.name="metabase_multi_version" \
+      commit --quiet --allow-empty -m "Initial commit (created by ensure_remote_sync_repo)"
+    git -C "$scratch_native" push --quiet "$repo_dir_native" HEAD:refs/heads/main
+    rm -rf "$scratch"
+  fi
+
+  if ! git --git-dir="$repo_dir_native" show-ref --quiet; then
+    echo "Failed to seed remote-sync git repo at $repo_dir (still has no branches after seeding — check antivirus/permissions)." >&2
+    return 1
+  fi
+}
+
+remote_sync_checkout_dir() {
+  echo "$STACK_ROOT/data/remote-sync-checkout/${COMPOSE_PROJECT_NAME}"
+}
+
+# Clones a normal (non-bare) working-tree copy of the remote-sync bare repo,
+# purely so it's browsable in an editor/VSCode — a bare repo (see
+# ensure_remote_sync_repo above) has no working tree, so a file explorer or
+# `ls` shows nothing useful there. Only clones once; an existing checkout is
+# left alone on subsequent starts (never force-refreshed) so it's safe to
+# treat as a normal folder — run `git pull` inside it by hand to pick up a
+# more recent export/push. A clone failure here is a convenience miss, not a
+# stack-breaking one, so it warns rather than aborting `make start`.
+ensure_remote_sync_checkout() {
+  require_command git
+  local repo_dir checkout_dir
+  repo_dir="$(remote_sync_repo_dir)"
+  checkout_dir="$(remote_sync_checkout_dir)"
+  if [[ ! -d "$checkout_dir/.git" ]]; then
+    mkdir -p "$(dirname "$checkout_dir")"
+    git clone --quiet "$(normalize_native_path "$repo_dir")" "$(normalize_native_path "$checkout_dir")" \
+      || echo "Warning: failed to create remote-sync checkout at $checkout_dir" >&2
+  fi
+}
+
+trino_config_dir() {
+  echo "$STACK_ROOT/data/trino-config/${COMPOSE_PROJECT_NAME}"
+}
+
+# Regenerates Trino's Postgres catalog config from this stack's own sample-dwh
+# credentials (safe to overwrite on every start — fully derived from env vars,
+# never hand-edited) and seeds — but never overwrites — the file-based
+# access-control rules.json. That file is intentionally left as a bare
+# allow-all starter: it's the user's own playground for impersonation and
+# table/row rules, filled in by hand rather than by this script, so a repeat
+# `make start` must never clobber edits made to it.
+ensure_trino_config() {
+  local config_dir catalog_dir ac_dir
+  config_dir="$(trino_config_dir)"
+  catalog_dir="$config_dir/catalog"
+  ac_dir="$config_dir/access-control"
+  mkdir -p "$catalog_dir" "$ac_dir"
+
+  cat > "$catalog_dir/postgresql.properties" <<EOF
+connector.name=postgresql
+connection-url=jdbc:postgresql://sample-dwh:5432/${SAMPLE_DB_NAME}
+connection-user=${SAMPLE_DB_USER}
+connection-password=${SAMPLE_DB_PASSWORD}
+EOF
+
+  if [[ ! -f "$ac_dir/rules.json" ]]; then
+    cp "$STACK_ROOT/seed/trino/access-control/rules.example.json" "$ac_dir/rules.json"
+    echo "Seeded Trino access-control rules: data/trino-config/${COMPOSE_PROJECT_NAME}/access-control/rules.json"
+  fi
+}
+
+# Host-side poll of Trino's /v1/info endpoint (mirrors wait_for_metabase).
+# Uses 127.0.0.1, not localhost — this repo has a documented recurring gotcha
+# on Windows/Docker Desktop where localhost resolves to ::1 first and the
+# published port isn't reachable that way even though the container is fine.
+wait_for_trino() {
+  require_command curl
+  require_command jq
+
+  local max_attempts=60
+  local sleep_seconds=5
+
+  for ((attempt = 1; attempt <= max_attempts; attempt++)); do
+    if curl -fsS "http://127.0.0.1:${TRINO_PORT}/v1/info" 2>/dev/null | jq -e '.starting == false' >/dev/null 2>&1; then
+      echo "Trino is responding."
+      return 0
+    fi
+    echo "  Waiting for Trino on port ${TRINO_PORT} — attempt ${attempt}/${max_attempts}..."
+    sleep "$sleep_seconds"
+  done
+
+  echo "Trino did not become healthy in time." >&2
+  return 1
 }
 
 service_container_id() {

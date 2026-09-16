@@ -8,7 +8,7 @@ STACK_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # shellcheck source=scripts/common.sh
 source "$SCRIPT_DIR/common.sh"
 
-action="${1:?Usage: pick.sh <start|stop|nuke>}"
+action="${1:?Usage: pick.sh <start|stop|nuke|watch-remote-sync>}"
 
 load_common_env
 
@@ -87,6 +87,13 @@ for env_file_path in "${env_file_paths[@]}"; do
       labels+=("$label")
       combos+=("$version $dataset")
       ;;
+    watch-remote-sync)
+      enable_remote_sync="$(grep -E '^ENABLE_REMOTE_SYNC=' "$env_file_path" 2>/dev/null | cut -d= -f2 | tr -d '\r' || true)"
+      [[ "$enable_remote_sync" == "true" ]] || continue
+      [[ "$running" == "true" ]] || label+="  (not running)"
+      labels+=("$label")
+      combos+=("$version $dataset")
+      ;;
   esac
 done
 
@@ -95,6 +102,7 @@ if [[ ${#labels[@]} -eq 0 ]]; then
     stop)  echo "No stacks are currently running." ;;
     start) echo "No version env files found. Create one from env/mb_versions/template.env.example." ;;
     nuke)  echo "No stacks configured." ;;
+    watch-remote-sync) echo "No stacks have ENABLE_REMOTE_SYNC=true." ;;
   esac
   exit 0
 fi
@@ -106,6 +114,7 @@ case "$action" in
   start) echo "Select a stack to start:" ;;
   stop)  echo "Select a running stack to stop:" ;;
   nuke)  echo "Select a stack to nuke (removes containers, volumes, and seed markers):" ;;
+  watch-remote-sync) echo "Select a stack to watch for remote-sync pushes:" ;;
 esac
 echo
 

@@ -2,7 +2,7 @@ SHELL := /usr/bin/env bash
 
 ROOT_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 
-.PHONY: help start stop nuke new list services-up services-down done prune
+.PHONY: help start stop nuke new list services-up services-down done prune download-nyctaxi watch-remote-sync
 
 help:
 	@echo "Metabase local stack"
@@ -16,6 +16,8 @@ help:
 	@echo "  make services-down                               -- stop shared services"
 	@echo "  make done                                        -- stop all running stacks and shared services"
 	@echo "  make prune                                       -- remove all unused images (tagged and untagged) and orphaned volumes"
+	@echo "  make download-nyctaxi [YEAR=<yyyy>]              -- one-time download of NYC taxi data for the clickhouse-nyctaxi dataset (defaults to 2025)"
+	@echo "  make watch-remote-sync [MB_VERSION=<v> DATASET=<d>] -- auto-pull the remote-sync checkout whenever a push lands (Ctrl-C to stop)"
 	@echo
 	@echo "See README.md for setup instructions."
 
@@ -62,3 +64,13 @@ prune:
 	@docker image prune -a -f
 	@echo "Removing orphaned volumes..."
 	@docker volume prune -f
+
+download-nyctaxi:
+	@bash "$(ROOT_DIR)/scripts/download-nyctaxi-data.sh" "$(YEAR)"
+
+watch-remote-sync:
+ifneq ($(MB_VERSION),)
+	@bash "$(ROOT_DIR)/scripts/watch-remote-sync.sh" "$(MB_VERSION)" "$(DATASET)"
+else
+	@bash "$(ROOT_DIR)/scripts/pick.sh" watch-remote-sync
+endif

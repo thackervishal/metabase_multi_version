@@ -17,7 +17,7 @@ Spin up isolated, fully-seeded Metabase stacks for different versions — each w
 1. Copy `env/common.env.example` → `env/common.env`.
 2. Edit `env/common.env`.
    - Set `MB_PREMIUM_EMBEDDING_TOKEN` — required for config-file bootstrap.
-   - Set `MB_LLM_ANTHROPIC_API_KEY` — required for Metabot.
+   - Set `MB_LLM_ANTHROPIC_API_KEY` — optional, only needed for stacks where you answer "yes" to the Metabot prompt in `make new`.
 3. Adjust credentials or ports if needed.
 4. *(Optional, recommended)* Install the [Metabase CLI](#metabase-cli-mb) globally: `npm install -g @metabase/cli`. Skip this and `make start` falls back to `npx` automatically — slower per call, but nothing else to set up.
 
@@ -66,6 +66,7 @@ Once your stack env files are in place, run `make start`, `make stop`, or `make 
 | `make services-down` | Stop shared services |
 | `make prune` | Remove all unused Docker images (tagged and untagged) and orphaned volumes |
 | `make done` | Stop all running stacks and shared services (end of day) |
+| `make watch-remote-sync` | Interactive — pick a remote-sync-enabled stack and auto-pull its browsable checkout on every push (see [Remote Sync](#remote-sync)) |
 
 **Prefer typing the command directly?**
 
@@ -270,6 +271,61 @@ When `ENABLE_EMAIL=true`, all email sent by Metabase (alerts, invites, password 
 
 ---
 
+## Remote Sync
+
+Remote Sync is Metabase's git-backed collection/library sync feature (Enterprise-only). Enable it per-stack in the version env file:
+
+```env
+ENABLE_REMOTE_SYNC=true
+```
+
+`make new` prompts for it when creating a new stack. To enable it on an existing stack, edit the env file and run `make start` again.
+
+**What gets set up automatically:**
+
+- A local bare git repo at `data/remote-sync/<stack>/`, seeded with one empty commit on `main`. (A plain empty bare repo isn't enough on its own — Metabase's own connection check rejects a repo with zero branches, even in read-write mode.) It's bind-mounted read-write into the container, with `MB_REMOTE_SYNC_URL=file:///remote-sync/repo.git` and `MB_REMOTE_SYNC_TYPE=read-write` already set — open **Admin → Remote Sync** and the repo is already connected, nothing to configure.
+- A normal, browsable working-tree checkout of that same repo at `data/remote-sync-checkout/<stack>/`. The bare repo itself has no visible files — that's what "bare" means — so this checkout is what to actually open in an editor.
+
+Both paths are gitignored and removed automatically by `make nuke`.
+
+**Deliberately left for you to turn on in Admin → Remote Sync:**
+
+- **"Sync transforms"** and which collections sync. These have no env-var equivalent in Metabase itself (admin UI/API only), and transforms sync is an all-or-nothing toggle, so the scaffolding never flips it on for you — do it by hand once the stack is up.
+- Every push. Nothing here auto-commits on content changes — you (or an automated caller) have to click **Push changes** in Admin → Remote Sync (or `POST /api/ee/remote-sync/export`) each time. This runs as a single background task: triggering a second export while one is still running fails with a generic "Something went wrong" toast rather than a clear "already in progress" message — just wait for the first one to finish and retry.
+
+**Browsing the synced content:**
+
+Open the checkout folder in VSCode like any other repo:
+
+```bash
+code data/remote-sync-checkout/<stack>
+```
+
+Refresh it manually after a push:
+
+```bash
+git -C data/remote-sync-checkout/<stack> pull
+```
+
+...or auto-refresh it continuously — polls the bare repo every 2s and pulls the instant it sees a new commit. Run this in a spare terminal and leave it while you work:
+
+```bash
+make watch-remote-sync                                          # interactive picker (lists remote-sync-enabled stacks only)
+make watch-remote-sync MB_VERSION=<version> DATASET=<dataset>    # direct
+```
+
+**Inspecting the bare repo directly** (no checkout needed — useful for one-off scripting):
+
+```bash
+export GIT_DIR="data/remote-sync/<stack>"
+git log --oneline --all --graph
+git ls-tree -r main --name-only
+git show main:<path-inside-repo>.yaml
+unset GIT_DIR
+```
+
+---
+
 ## What Is and Isn't Git-Ignored
 
 | Path | Status | Why |
@@ -334,6 +390,7 @@ If you rotate a stack's key, rebuild from a clean app_db (`make nuke` then `make
 | `env/mb_versions/<version>.env` | Image tag and port bindings for one stack (gitignored, personal) |
 | `env/dwh_source/<dataset>.env` | DWH image and dataset-specific settings |
 | `compose/datasets/<dataset>.yml` | Compose overlay wiring up the `sample-dwh` service |
+| `compose/remote-sync-overlay.yml` | Compose overlay wiring up Remote Sync when `ENABLE_REMOTE_SYNC=true` |
 | `seed/metabase/config-pg15.yml` / `config-mysql8.yml` | Bootstrap: users, API key, database connection (selected via `METABASE_CONFIG_FILE`) |
 | `seed/sample-dwh/person_profiles_json.sql` | JSON sidecar table for the sample DWH |
 | `scripts/common.sh` | Shared runtime: env loading, stack naming, path normalization, image refresh, health waiting |
@@ -346,6 +403,7 @@ If you rotate a stack's key, rebuild from a clean app_db (`make nuke` then `make
 | `scripts/stop.sh` | Stop containers, leave volumes intact |
 | `scripts/done.sh` | Stop all running stacks and shared services (end-of-day shortcut) |
 | `scripts/nuke.sh` | Remove containers, network, volumes, seed markers; optionally delete env file |
+| `scripts/watch-remote-sync.sh` | Poll a stack's remote-sync bare repo and auto-pull its browsable checkout on every push |
 | `scripts/seed-metabase.sh` | Post-start API seeding: groups, users, collection, questions, dashboard |
 | `scripts/seed-sample-dwh.sh` | DWH seed — runs before Metabase starts |
 | `scripts/optional/snapshot.sh` | SQL dumps for app_db and sample DWH |

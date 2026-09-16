@@ -6,3 +6,7 @@ snapshots/
 .mcp.json
 metabot-debug-logs/
 .00_repro_*/
+data/
+.clj-kondo/
+.lsp/
+.claude/

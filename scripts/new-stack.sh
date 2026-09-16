@@ -12,15 +12,38 @@ load_common_env
 
 # ── Discover datasets ─────────────────────────────────────────────────────────
 
-datasets=()
+# Fixed display order for known datasets (not alphabetical — alphabetical put
+# clickhouse-nyctaxi first, which reads oddly before the two long-standing
+# sample-* profiles). Anything not listed here (a future dataset) falls back
+# to appearing after these, alphabetically.
+dataset_display_order=(sample-pg15 sample-mysql8 clickhouse-nyctaxi)
+
+all_dataset_ids=()
 while IFS= read -r f; do
-  datasets+=("$(basename "$f" .env)")
+  all_dataset_ids+=("$(basename "$f" .env)")
 done < <(find "$STACK_ROOT/env/dwh_source" -maxdepth 1 -name "*.env" | sort)
 
-if [[ ${#datasets[@]} -eq 0 ]]; then
+if [[ ${#all_dataset_ids[@]} -eq 0 ]]; then
   echo "No dataset profiles found in env/dwh_source/." >&2
   exit 1
 fi
+
+datasets=()
+for id in "${dataset_display_order[@]}"; do
+  for f in "${all_dataset_ids[@]}"; do
+    if [[ "$f" == "$id" ]]; then
+      datasets+=("$id")
+      break
+    fi
+  done
+done
+for f in "${all_dataset_ids[@]}"; do
+  known=0
+  for d in "${datasets[@]}"; do
+    [[ "$d" == "$f" ]] && known=1 && break
+  done
+  [[ $known -eq 0 ]] && datasets+=("$f")
+done
 
 # ── Fetch recent major.minor versions for the prompt hint ────────────────────
 
@@ -250,6 +273,7 @@ fi
 max_metabase=3290
 max_appdb=15392
 max_sampledwh=15393
+max_trino=18090
 
 while IFS= read -r f; do
   port="$(grep -E '^METABASE_PORT=' "$f" 2>/dev/null | cut -d= -f2 || true)"
@@ -258,6 +282,8 @@ while IFS= read -r f; do
   if [[ -n "$port" && "$port" -gt "$max_appdb" ]]; then max_appdb="$port"; fi
   port="$(grep -E '^SAMPLE_DB_PORT=' "$f" 2>/dev/null | cut -d= -f2 || true)"
   if [[ -n "$port" && "$port" -gt "$max_sampledwh" ]]; then max_sampledwh="$port"; fi
+  port="$(grep -E '^TRINO_PORT=' "$f" 2>/dev/null | cut -d= -f2 || true)"
+  if [[ -n "$port" && "$port" -gt "$max_trino" ]]; then max_trino="$port"; fi
 done < <(
   find "$STACK_ROOT/env/mb_versions" -maxdepth 1 -name "*.env" ! -name "template.env.example" 2>/dev/null \
   || true
@@ -266,6 +292,7 @@ done < <(
 sug_metabase=$(( max_metabase + 10 ))
 sug_appdb=$(( max_appdb + 10 ))
 sug_sampledwh=$(( max_sampledwh + 10 ))
+sug_trino=$(( max_trino + 10 ))
 
 # ── Prompt for ports ──────────────────────────────────────────────────────────
 
@@ -298,6 +325,28 @@ read -rp "Enable SAML SSO (Keycloak)? [y/N]: " enable_saml </dev/tty
 enable_saml="${enable_saml:-N}"
 [[ "$enable_saml" =~ ^[Yy]$ ]] && enable_saml_val=true || enable_saml_val=false
 
+read -rp "Enable Metabot (AI assistant, uses the Anthropic key from env/common.env)? [y/N]: " enable_metabot </dev/tty
+enable_metabot="${enable_metabot:-N}"
+[[ "$enable_metabot" =~ ^[Yy]$ ]] && enable_metabot_val=true || enable_metabot_val=false
+
+read -rp "Enable Remote Sync (git-backed collection sync — mounts an empty local git repo and connects it, read-write)? [y/N]: " enable_remote_sync </dev/tty
+enable_remote_sync="${enable_remote_sync:-N}"
+[[ "$enable_remote_sync" =~ ^[Yy]$ ]] && enable_remote_sync_val=true || enable_remote_sync_val=false
+
+read -rp "Enable Trino (query-engine layer in front of Postgres, for testing connection impersonation — see .github/agent-trino-impersonation.md)? [y/N]: " enable_trino </dev/tty
+enable_trino="${enable_trino:-N}"
+if [[ "$enable_trino" =~ ^[Yy]$ ]]; then
+  enable_trino_val=true
+  if [[ "$selected_dataset" != "sample-pg15" ]]; then
+    echo "  Note: Trino's generated catalog currently only targets the sample-pg15 dataset's Postgres — it may not connect correctly with '${selected_dataset}'."
+  fi
+  read -rp "  TRINO_PORT     [${sug_trino}]: " trino_port </dev/tty
+  trino_port="${trino_port:-$sug_trino}"
+else
+  enable_trino_val=false
+  trino_port="$sug_trino"
+fi
+
 # ── Optional friendly name ────────────────────────────────────────────────────
 
 echo
@@ -318,6 +367,10 @@ SAMPLE_DB_PORT=${sampledwh_port}
 ENABLE_EMAIL=${enable_email_val}
 ENABLE_WEBHOOKS=${enable_webhooks_val}
 ENABLE_SAML=${enable_saml_val}
+ENABLE_METABOT=${enable_metabot_val}
+ENABLE_REMOTE_SYNC=${enable_remote_sync_val}
+ENABLE_TRINO=${enable_trino_val}
+TRINO_PORT=${trino_port}
 MB_AUTOMATION_API_KEY=${automation_api_key}
 EOF
 

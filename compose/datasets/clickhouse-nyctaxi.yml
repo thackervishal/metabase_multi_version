@@ -1,0 +1,44 @@
+services:
+  sample-dwh:
+    image: ${SAMPLE_DB_IMAGE}
+    environment:
+      CLICKHOUSE_DB: ${SAMPLE_DB_NAME}
+      CLICKHOUSE_USER: ${SAMPLE_DB_USER}
+      CLICKHOUSE_PASSWORD: ${SAMPLE_DB_PASSWORD}
+    ports:
+      - "${SAMPLE_DB_PORT}:8123"
+    volumes:
+      - sample_dwh_data:/var/lib/clickhouse
+      # Pre-downloaded NYC taxi Parquet files (see scripts/download-nyctaxi-data.sh) —
+      # a plain host bind-mount, not a Docker-managed volume, so `make nuke` never
+      # touches it and a fresh stack never needs to re-download. Mounted under
+      # ClickHouse's user_files_path so file('nyctaxi/*.parquet', Parquet) works.
+      #
+      # NOT :ro — the official image's entrypoint recursively chowns everything
+      # under /var/lib/clickhouse to the `clickhouse` user before it starts the
+      # server, and aborts (under `set -e`) the moment any chown fails. A
+      # read-only mount here makes that chown fail on every file, and the
+      # container exits 1 before ClickHouse ever boots (confirmed via
+      # `docker logs` — the entrypoint's chown errors are the entire log,
+      # nothing from the server itself). Nothing in this dataset's design ever
+      # writes into this path at runtime (file() only reads), so read-write
+      # here costs nothing in practice.
+      - ../data/clickhouse-nyctaxi:/var/lib/clickhouse/user_files/nyctaxi
+    healthcheck:
+      # 127.0.0.1, not localhost — confirmed live: busybox wget resolves
+      # `localhost` to ::1 first, but this container's ClickHouse only listens
+      # on IPv4 (its own log shows `Listen [::]:8123 failed`, a Docker
+      # Desktop/WSL2 IPv6-in-container quirk), so wget hit connection-refused
+      # on every single check even while the server was answering real HTTP
+      # requests on the published port the whole time. Same class of gotcha
+      # already documented for the MCP registration in CLAUDE.md.
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8123/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+volumes:
+  sample_dwh_data:
+    external: true
+    name: ${SAMPLE_DB_VOLUME}
