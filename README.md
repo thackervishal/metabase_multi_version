@@ -241,7 +241,7 @@ Then watch it at `http://localhost:9000/s/${SESSION_ID}`.
 
 ### Keycloak (SAML / OIDC)
 
-When `ENABLE_SAML=true`, a local [Keycloak](http://keycloak:8180) instance starts (admin / admin). It handles both SAML and OIDC flows.
+When `ENABLE_SAML=true`, a local [Keycloak](http://keycloak:8180) instance starts (admin / metabot1). It handles both SAML and OIDC flows.
 
 **Hosts file requirement:**
 
@@ -351,7 +351,7 @@ Ports are defined per-developer in `env/mb_versions/<version>.env` — see `env/
   - host: `localhost`
   - db: `metabaseappdb`
   - user: `metabase`
-  - password: `metabase_app_password`
+  - password: `metabot1`
 - **Sample DWH**
   - host: `localhost`
   - db: `sample`
