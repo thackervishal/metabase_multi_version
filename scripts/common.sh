@@ -311,8 +311,9 @@ load_stack_env() {
   export MB_TRANSFORMS_ENABLED="${MB_TRANSFORMS_ENABLED:-true}"
   export MB_AI_FEATURES_ENABLED="${MB_AI_FEATURES_ENABLED:-true}"
   export MB_METABOT_ENABLED="${MB_METABOT_ENABLED:-true}"
-  export MB_LLM_METABOT_PROVIDER="${MB_LLM_METABOT_PROVIDER:-anthropic/claude-sonnet-4-6}"
-  export MB_LLM_ANTHROPIC_API_KEY="${MB_LLM_ANTHROPIC_API_KEY:-}"
+  # No defaults for MB_LLM_* here: any value (even empty) reaching the container
+  # locks the matching Admin UI setting. compose/metabot-overlay.yml passes them
+  # through only when set in env/common.env or the version env file.
 
   export STACK_STATE_DIR="$STACK_ROOT/.state"
   export SAMPLE_DB_SEED_MARKER="$STACK_STATE_DIR/${COMPOSE_PROJECT_NAME}.sample-dwh-seeded"
