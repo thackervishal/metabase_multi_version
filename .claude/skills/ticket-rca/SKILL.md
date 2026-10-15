@@ -24,6 +24,7 @@ Style (applies to every reply, not only formal docs):
 - Minimal bold. No nested headings.
 - Never use the em dash character. Use a period, comma, or hyphen.
 - Links are always plain URLs. Never `<url|text>` and never `[text](url)` in text meant for Slack, email, or Pylon.
+- Never cite a GitHub PR, issue, or commit by number or short hash alone. Always give the full URL, for example `https://github.com/metabase/metabase/pull/76467`. Do the same for Linear and Pylon items when the URL is known.
 
 Identity: once per conversation, call Pylon `get_me` and match by email. When ticket data shows this person as the author of a message or an assignee, treat it as theirs and do not refer to them in the third person.
 
@@ -33,7 +34,7 @@ Skip any step that is clearly irrelevant. Do not search a source just to be thor
 
 Tier 1, always:
 1. Search past work. Grep the root `README.md` table and the folder READMEs in `metabase_repros` for key phrases, error text, and feature names. If a complete, current answer exists, stop and give it.
-2. Read the ticket. Call `get_issue` and `get_issue_messages`. For images, use `attachment_urls` from `get_issue`. Download each to a temp folder outside the repo, view it, then delete it. Never write the signed URL anywhere. If you cannot access an attachment, stop and ask the user to paste it, or ask whether to continue without it.
+2. Read the ticket. Call `get_issue`. Its `body_html` is the first message. Add `include_messages: true` only if the ticket has replies (`number_of_touches` above 0). The Pylon server no longer offers `get_issue_messages`. For images, use `attachment_urls` from `get_issue`. Download each to a temp folder outside the repo, view it, then delete it. Never write the signed URL anywhere. If you cannot access an attachment, stop and ask the user to paste it, or ask whether to continue without it.
 3. Extract: Metabase version, deployment (Cloud or self-hosted), the symptom, exact error text, and the instance GUID if present.
 4. Search Pylon for similar tickets with `search_issues`. Use key phrases from the ticket. Filter by custom fields when it helps. Known slugs: `product_area`, `question_type`, `ticket_reason`, `priority`.
 5. Search Slack (`slack_search_public_and_private`, then `slack_read_thread`), Notion (`notion-search`, `notion-fetch`, `notion-get-comments`), and Linear (`list_issues`, `get_issue`, `list_comments`, `get_attachment`). Read long Slack threads in full, because conclusions often change partway through. Try two or three phrasings. A Linear text search for the ticket's words can miss the real issue, while Slack finds it. When Slack, Notion, or GitHub mention a Linear ID (for example `EMB-1144`), call Linear `get_issue` on it directly.
@@ -43,6 +44,21 @@ Tier 2, only if Tier 1 is not enough:
 - To verify behavior, read the code and docs. Local checkouts are in the workspace: `metabase` (code) and `metabase.github.io` (docs). Use `git log -S` and `git log --grep` to find the commit or release that changed the behavior.
 - For logs, follow the `instance-logs` skill. Never ask the user to look at logs. Only ask for the instance GUID.
 - To reproduce, pick the customer's exact Metabase version, then propose a stack (`make new`, then `make start` in `metabase_multi_version`). Ask the user before starting any stack. Follow the repro rules in the `metabase_repros` CLAUDE.md.
+
+## Token budget
+
+Tool results are the main cost. One measured run was about 14,000 tokens of results, and a single call (the full HTML message history of an old ticket) was about 5,800 of them.
+
+- Read full messages (`get_issue` with `include_messages`) only for the ticket being worked. For similar tickets, use the `search_issues` rows (title, state, date) and open at most one or two.
+- Always set small limits and field lists:
+  - Slack: `response_format: concise`, `include_context: false`, `limit: 5`. Turn context on only for the one thread you read.
+  - Pylon `search_issues`: `limit: 5`.
+  - Linear `list_issues`: `limit: 5`, `fields: ["id","title","status","url"]`. Then `get_issue` only on the one or two that matter.
+  - Notion `notion-search`: `page_size: 5`, `max_highlight_length: 150`. Fetch only pages whose title fits.
+  - GitHub: `gh search issues ... --limit 5 --json number,title,state,url`. For one issue, `gh issue view <n> --json title,state,body` and read only what you need.
+- Search the most specific phrase first (exact error text). Broaden only when there are no hits.
+- Never print a whole file or log. Use `Grep` with `head_limit`, and `git log -S` with `--format` and `| head`.
+- Stop as soon as you have a confirmed cause and its source link. Skip the remaining steps.
 
 ## Saving findings
 
@@ -60,7 +76,7 @@ GitHub is read-only. If a bug report, issue, PR, or feature request is needed, w
 ## Before you answer
 
 1. No em dash character anywhere.
-2. All links are plain URLs.
+2. All links are plain URLs. Every PR, issue, and commit reference is a full GitHub URL, never a bare number.
 3. No filler framing or throat-clearing.
 4. Starts with a ticket recap.
 5. No secrets, signed URLs, or customer data in anything written to disk.
