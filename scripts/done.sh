@@ -24,4 +24,9 @@ if echo "$all_projects" | grep -qx "$SHARED_PROJECT" 2>/dev/null; then
   bash "$SCRIPT_DIR/shared-services.sh" stop
 fi
 
+# Laya (local decision model) is its own Compose project, not an mb_* stack.
+if docker compose ls 2>/dev/null | awk 'NR>1 { print $1 }' | tr -d '\r' | grep -qx "laya"; then
+  bash "$SCRIPT_DIR/laya.sh" stop
+fi
+
 echo "All done. Have a good one."

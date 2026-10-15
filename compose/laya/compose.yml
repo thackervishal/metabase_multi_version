@@ -1,0 +1,62 @@
+# Local Laya server for ticket RCA. Own Compose project ("laya", not "mb_*" so
+# done.sh/pick.sh do not mistake it for a Metabase stack). Manage it with
+# `make laya-up` / `laya-stop` / `laya-down`. See .github/agent-laya.md.
+name: laya
+
+services:
+  laya:
+    build:
+      context: .
+      args:
+        TORCH_VERSION: "${LAYA_TORCH_VERSION:-2.14.0}"
+        TORCH_INDEX: "${LAYA_TORCH_INDEX:-cu130}"
+        LAYA_VERSION: "${LAYA_VERSION:-0.4.8}"
+    image: laya-local:${LAYA_VERSION:-0.4.8}
+    restart: "no"
+    # Published on loopback only. The server listens on 0.0.0.0 inside the container.
+    ports:
+      - "127.0.0.1:${LAYA_PORT:-8787}:8000"
+    environment:
+      LAYA_DEVICE: cuda
+      LAYA_API_KEY_FILE: /run/secrets/laya_api_key
+      LAYA_PRELOAD: "1"
+      # English only by default (smaller download, less memory). For non-English
+      # tickets set LAYA_MODELS=english,multilingual and LAYA_MAX_LOADED=2.
+      LAYA_MODELS: "${LAYA_MODELS:-english}"
+      LAYA_DEFAULT_MODEL: english
+      LAYA_MAX_LOADED: "${LAYA_MAX_LOADED:-1}"
+      LAYA_LOG_LEVEL: info
+      HF_HUB_OFFLINE: "${LAYA_HF_OFFLINE:-0}"
+    secrets:
+      - laya_api_key
+    volumes:
+      - laya_hf:/home/laya/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["${LAYA_GPU_ID:-0}"]
+              capabilities: [gpu]
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # 127.0.0.1, not localhost: localhost can resolve to ::1 first (see CLAUDE.md).
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import os,urllib.request as u;k=open(os.environ['LAYA_API_KEY_FILE']).read().strip();u.urlopen(u.Request('http://127.0.0.1:8000/health',headers={'Authorization':'Bearer '+k}),timeout=3)"
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 180s
+
+secrets:
+  laya_api_key:
+    file: ../../.state/laya-api-key
+
+volumes:
+  laya_hf:
