@@ -9,4 +9,6 @@ metabot-debug-logs/
 data/
 .clj-kondo/
 .lsp/
-.claude/
+.claude/*
+!.claude/settings.json
+!.claude/skills/
