@@ -1,6 +1,8 @@
 version: 1
 config:
   settings:
+    # Must stay first: 1.65+ fails on an existing app DB (feature :whitelabel "not available") unless the token is applied before gated settings.
+    premium-embedding-token: "{{ env MB_PREMIUM_EMBEDDING_TOKEN }}"
     site-name: "{{ env MB_SITE_NAME }}"
     application-name: "{{ env MB_APPLICATION_NAME }}"
     site-locale: en
