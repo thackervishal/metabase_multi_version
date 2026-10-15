@@ -118,10 +118,48 @@ done < <(
   | sort -V -r
 )
 
+# A major with no stable build yet (newly announced) only has beta tags on
+# Docker Hub, named the same way as hotfix builds plus a literal "-beta"
+# suffix (vX.Y.Z-beta, vX.Y.Z.W-beta — confirmed live, no numbered variants
+# like "-beta2"). Betas are opt-in only, and only offered as a fallback when
+# no stable tag exists at all — a major that already has a stable release
+# never surfaces its betas here, so this can't accidentally steer anyone
+# already picking from real releases onto a pre-release build.
+using_beta=0
 if [[ ${#all_tags[@]} -eq 0 ]]; then
-  echo "No stable builds found for ${major_minor} on Docker Hub." >&2
-  echo "Check the version number and try again." >&2
-  exit 0
+  beta_tags=()
+  while IFS= read -r tag; do
+    [[ -n "$tag" ]] && beta_tags+=("$tag")
+  done < <(
+    echo "$tags_json" | jq -r \
+      --arg prefix "v${major_minor}." \
+      '.results[].name
+        | select(startswith($prefix))
+        | select(test("^v[0-9]+\\.[0-9]+\\.[0-9]+(\\.[0-9]+)?-beta$"))
+        | select(test("rc|alpha"; "i") | not)' \
+    | tr -d '\r' \
+    | sort -V -r
+  )
+
+  if [[ ${#beta_tags[@]} -eq 0 ]]; then
+    echo "No stable builds found for ${major_minor} on Docker Hub." >&2
+    echo "Check the version number and try again." >&2
+    exit 0
+  fi
+
+  echo
+  echo "No stable release exists yet for ${major_minor} — only pre-release beta builds are available:"
+  echo
+  for tag in "${beta_tags[@]}"; do
+    echo "  ${tag}"
+  done
+  echo
+  read -rp "Use a beta build instead? Beta builds can have bugs and are not meant for production use. [y/N]: " use_beta </dev/tty
+  if [[ ! "$use_beta" =~ ^[Yy]$ ]]; then
+    exit 0
+  fi
+  all_tags=("${beta_tags[@]}")
+  using_beta=1
 fi
 
 # ── Pick minor ────────────────────────────────────────────────────────────────
@@ -130,6 +168,7 @@ fi
 # or X.Y.Z.W (a hotfix build — the minor is everything but the trailing digit).
 tag_minor() {
   local stripped="${1#v}"
+  stripped="${stripped%-beta}"
   if [[ "$stripped" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     printf '%s\n' "${stripped%.*}"
   else
@@ -149,7 +188,11 @@ for tag in "${all_tags[@]}"; do
 done
 
 echo
-echo "Minor versions for ${major_minor} (newest first):"
+if [[ $using_beta -eq 1 ]]; then
+  echo "Minor versions for ${major_minor} (beta, newest first):"
+else
+  echo "Minor versions for ${major_minor} (newest first):"
+fi
 echo
 
 for i in "${!minor_list[@]}"; do
@@ -188,7 +231,11 @@ done
 floating_tag="${selected_minor}.x"
 
 echo
-echo "Builds for ${selected_minor} (newest first):"
+if [[ $using_beta -eq 1 ]]; then
+  echo "Builds for ${selected_minor} (beta, newest first):"
+else
+  echo "Builds for ${selected_minor} (newest first):"
+fi
 echo
 
 for i in "${!hotfix_tags[@]}"; do
@@ -199,6 +246,7 @@ for i in "${!hotfix_tags[@]}"; do
 done
 
 float_label="Float on latest patch  →  MB_IMAGE_TAG=${floating_tag}  (auto-pulls newer bugfixes on make start)"
+[[ $using_beta -eq 1 ]] && float_label+="  (tracks beta builds until ${selected_minor} ships stable)"
 find "$STACK_ROOT/env/mb_versions" -maxdepth 1 -name "${floating_tag}_*.env" 2>/dev/null | grep -q . && float_label+="  (a variant exists)"
 echo
 echo "  f)  ${float_label}"
