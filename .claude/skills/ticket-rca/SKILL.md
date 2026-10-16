@@ -9,6 +9,8 @@ Input: a Pylon ticket number or link, for example `72554`. The number is the `is
 
 At the start, suggest a session name for the user to run: `/rename <ticket> <few words>`.
 
+Run one ticket per session. Every turn re-reads the whole conversation, and that cost is far larger than all tool results together. If this session already holds a long earlier conversation, tell the user to start a new session or run `/clear` before the ticket.
+
 ## Rules for the whole session
 
 Data handling:
@@ -35,15 +37,27 @@ Skip any step that is clearly irrelevant. Do not search a source just to be thor
 Tier 1, always:
 1. Search past work. Grep the root `README.md` table and the folder READMEs in `metabase_repros` for key phrases, error text, and feature names. If a complete, current answer exists, stop and give it.
 2. Read the ticket. Call `get_issue`. Its `body_html` is the first message. Add `include_messages: true` only if the ticket has replies (`number_of_touches` above 0). The Pylon server no longer offers `get_issue_messages`. For images, use `attachment_urls` from `get_issue`. Download each to a temp folder outside the repo, view it, then delete it. Never write the signed URL anywhere. If you cannot access an attachment, stop and ask the user to paste it, or ask whether to continue without it.
-3. Extract: Metabase version, deployment (Cloud or self-hosted), the symptom, exact error text, and the instance GUID if present.
+3. Extract: Metabase version, deployment (Cloud or self-hosted), the symptom, exact error text, and the instance GUID if present. If the ticket gives an instance URL or GUID, use it and match it to a stats row. If it does not, look up the account's instances in stats (see "Customer lookup in stats" below). When the account has more than one instance, list them and ask the user which one the ticket is about. Do not guess the deployment from a custom domain.
 4. Search Pylon for similar tickets with `search_issues`. Use key phrases from the ticket. Filter by custom fields when it helps. Known slugs: `product_area`, `question_type`, `ticket_reason`, `priority`.
 5. Search Slack (`slack_search_public_and_private`, then `slack_read_thread`), Notion (`notion-search`, `notion-fetch`, `notion-get-comments`), and Linear (`list_issues`, `get_issue`, `list_comments`, `get_attachment`). Read long Slack threads in full, because conclusions often change partway through. Try two or three phrasings. A Linear text search for the ticket's words can miss the real issue, while Slack finds it. When Slack, Notion, or GitHub mention a Linear ID (for example `EMB-1144`), call Linear `get_issue` on it directly.
 6. Search GitHub issues with the same key phrases: `gh search issues` or `gh issue list --search`. Check whether a later version fixed it (`list_releases` in Linear, release notes, `git log`).
 
 Tier 2, only if Tier 1 is not enough:
-- To verify behavior, read the code and docs. Local checkouts are in the workspace: `metabase` (code) and `metabase.github.io` (docs). Use `git log -S` and `git log --grep` to find the commit or release that changed the behavior.
+- To verify behavior, read the code and docs. Local checkouts are in the workspace: `metabase` (code), `metabase.github.io` (docs), and `harbormaster` (Cloud billing, subscriptions, add-ons, dev instances, tokens). Search them with Grep before saying a Cloud rule "was not found" or asking the user. For Cloud plan or add-on rules, start with `harbormaster/src/harbormaster/purchases.clj` and `dev_subscriptions.clj`. Example: the "dev subscriptions can't have addons" check is in `purchase!` in `purchases.clj`. Use `git log -S` and `git log --grep` to find the commit or release that changed the behavior.
 - For logs, follow the `instance-logs` skill. Never ask the user to look at logs. Only ask for the instance GUID.
 - To reproduce, pick the customer's exact Metabase version, then propose a stack (`make new`, then `make start` in `metabase_multi_version`). Ask the user before starting any stack. Follow the repro rules in the `metabase_repros` CLAUDE.md.
+
+## Customer lookup in stats
+
+The `claude.ai Metabase` MCP is the stats instance. Use it after step 2 to get deployment (cloud or self-hosted), instance GUID, and DNS alias. Pylon does not hold these. `get_issue` returns only `account.id`, and `search_accounts` returns name, domain, and ID.
+
+- The ticket's Pylon `account.id` equals `pylon_organization_id` in the stats Customer 360 account model (card id 4523, database 26, table 38484). Filter on it. `email_domain` also works as a fallback.
+- Columns: `deployment` (`cloud` or self-hosted), `dns_alias` (the `<alias>.metabaseapp.com` name), `instance_id` (the GUID the `instance-logs` skill needs), `instance_region`, `email_domain`, `contact_email`.
+- One account can have several rows (prod, dev, old instances). Pick the row whose `dns_alias` or `instance_id` matches the ticket. If the ticket names no instance, list the rows and ask the user which one.
+- Run it with `execute_query` as two stages. Stage 1: `source-card` 4523 with `fields` set to the columns above. Stage 2: a `filters` clause on `pylon_organization_id` equal to the ticket's `account.id`, with `limit: 10`. Use column names, not field ids.
+- Related dashboards: Customer 360 - Pylon (id 2183, the one embedded in Pylon, params Org ID, User Email, Domain, Instance DNS) and Customer 360 (id 1880). Card 13281 "Deployment, Metabase Version & Country" shows the same data per org.
+- Read the account memory banner in Pylon for any security incident note. The API does not expose it, so mention to the user that it exists if the screenshot or the user shows one.
+- Treat all rows as customer data. Do not write the instance GUID next to customer names in files outside the ticket's `metabase_repros` folder.
 
 ## Token budget
 
@@ -71,7 +85,7 @@ GitHub is read-only. If a bug report, issue, PR, or feature request is needed, w
 - Open with a ticket recap: title, customer, contact, opened date, status.
 - Then findings, stated directly, each with a plain URL to its source (Slack, GitHub, Notion, Linear, Pylon).
 - End with what is still unknown and the next step.
-- For customer-facing text, use the `ticket-reply` skill.
+- For customer-facing text, use the `write` skill.
 
 ## Before you answer
 
@@ -80,3 +94,4 @@ GitHub is read-only. If a bug report, issue, PR, or feature request is needed, w
 3. No filler framing or throat-clearing.
 4. Starts with a ticket recap.
 5. No secrets, signed URLs, or customer data in anything written to disk.
+6. Run `bash scripts/rca-health.sh due`. If it prints DUE, add one line at the end: "The weekly RCA health check is due. Run /rca-maintenance."

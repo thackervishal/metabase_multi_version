@@ -2,7 +2,7 @@ SHELL := /usr/bin/env bash
 
 ROOT_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 
-.PHONY: help start stop nuke new list services-up services-down done prune download-nyctaxi watch-remote-sync laya-up laya-stop laya-down laya-status
+.PHONY: help start stop nuke new list services-up services-down done prune download-nyctaxi watch-remote-sync laya-up laya-stop laya-down laya-status rca-health
 
 help:
 	@echo "Metabase local stack"
@@ -65,6 +65,9 @@ laya-down:
 
 laya-status:
 	@bash "$(ROOT_DIR)/scripts/laya.sh" status
+
+rca-health:
+	@bash "$(ROOT_DIR)/scripts/rca-health.sh" all
 
 done:
 	@bash "$(ROOT_DIR)/scripts/done.sh"
